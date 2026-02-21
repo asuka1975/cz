@@ -1,0 +1,16 @@
+// TEST: 再帰によるフィボナッチ数計算
+// EXPECT: success
+// DESCRIPTION: 再帰関数とif式を使ったフィボナッチ数計算が正しく動作することを検証する
+
+fn fibonacci(n: i32) -> i32 {
+    if n <= 1 {
+        n
+    } else {
+        fibonacci(n - 1) + fibonacci(n - 2)
+    }
+}
+
+fn main() -> i32 {
+    print_i32(fibonacci(10));  // 55
+    0
+}

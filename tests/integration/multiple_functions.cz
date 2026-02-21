@@ -1,0 +1,17 @@
+// TEST: 複数関数の定義と呼び出し
+// EXPECT: success
+// DESCRIPTION: 複数の関数定義と相互呼び出しが正しく動作することを検証する
+
+fn square(x: i32) -> i32 {
+    x * x
+}
+
+fn sum_of_squares(a: i32, b: i32) -> i32 {
+    square(a) + square(b)
+}
+
+fn main() -> i32 {
+    let result: i32 = sum_of_squares(3, 4);
+    print_i32(result);  // 25
+    0
+}

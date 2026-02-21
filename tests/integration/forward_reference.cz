@@ -1,0 +1,13 @@
+// TEST: 関数の前方参照
+// EXPECT: success
+// DESCRIPTION: 定義前の関数を呼び出せること（前方参照）を検証する
+
+fn main() -> i32 {
+    let result: i32 = add(1, 2);
+    print_i32(result);
+    0
+}
+
+fn add(a: i32, b: i32) -> i32 {
+    a + b
+}

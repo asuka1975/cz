@@ -1,0 +1,24 @@
+// TEST: 演算子と記号の字句解析
+// EXPECT: success
+// DESCRIPTION: すべての演算子と記号トークンが正しく認識されることを検証する
+
+fn main() -> i32 {
+    let a: i32 = 1 + 2;
+    let b: i32 = 3 - 1;
+    let c: i32 = 2 * 3;
+    let d: i32 = 10 / 2;
+    let e: i32 = 10 % 3;
+
+    let f: i32 = if a == b { 1 } else { 0 };
+    let g: i32 = if a != b { 1 } else { 0 };
+    let h: i32 = if a < b { 1 } else { 0 };
+    let i: i32 = if a > b { 1 } else { 0 };
+    let j: i32 = if a <= b { 1 } else { 0 };
+    let k: i32 = if a >= b { 1 } else { 0 };
+
+    let l: i32 = true && false;
+    let m: i32 = true || false;
+    let n: i32 = !true;
+
+    0
+}

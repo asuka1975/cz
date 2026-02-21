@@ -1,0 +1,22 @@
+// TEST: ブロック式の構文解析
+// EXPECT: success
+// DESCRIPTION: ブロック式が値を返すことが正しく解析されることを検証する
+
+fn main() -> i32 {
+    // ブロック式を変数に束縛
+    let x: i32 = {
+        let a: i32 = 10;
+        let b: i32 = 20;
+        a + b
+    };
+
+    // ネストしたブロック式
+    let y: i32 = {
+        let inner: i32 = {
+            5 + 5
+        };
+        inner * 2
+    };
+
+    x + y
+}

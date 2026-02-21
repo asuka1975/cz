@@ -1,0 +1,13 @@
+// TEST: 変数のスコープ
+// EXPECT: success
+// DESCRIPTION: ブロックスコープが正しく機能することを検証する
+
+fn main() -> i32 {
+    let x: i32 = 1;
+    let result: i32 = {
+        let y: i32 = 2;
+        x + y
+    };
+    // y はここでは参照不可
+    result
+}

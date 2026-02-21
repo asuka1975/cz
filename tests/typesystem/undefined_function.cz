@@ -1,0 +1,7 @@
+// TEST: 未定義関数の呼び出しエラー
+// EXPECT: compile-error
+// DESCRIPTION: 宣言されていない関数を呼び出すとコンパイルエラーになることを検証する
+
+fn main() -> i32 {
+    foo()
+}

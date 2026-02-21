@@ -1,0 +1,7 @@
+// TEST: main関数がないプログラム
+// EXPECT: compile-error
+// DESCRIPTION: main関数が定義されていないプログラムがコンパイルエラーになることを検証する
+
+fn foo() -> i32 {
+    42
+}

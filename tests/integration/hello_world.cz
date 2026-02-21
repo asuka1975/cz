@@ -1,0 +1,8 @@
+// TEST: Hello World (print_i32)
+// EXPECT: success
+// DESCRIPTION: print_i32組み込み関数で値を出力するプログラムが正しく動作することを検証する
+
+fn main() -> i32 {
+    print_i32(42);
+    0
+}

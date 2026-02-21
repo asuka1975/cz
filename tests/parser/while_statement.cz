@@ -1,0 +1,13 @@
+// TEST: while文の構文解析
+// EXPECT: success
+// DESCRIPTION: while文が正しく解析されることを検証する
+
+fn main() -> i32 {
+    let mut i: i32 = 0;
+    let mut sum: i32 = 0;
+    while i < 10 {
+        sum = sum + i;
+        i = i + 1;
+    }
+    sum
+}

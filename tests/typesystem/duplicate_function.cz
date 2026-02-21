@@ -1,0 +1,15 @@
+// TEST: 同名関数の重複定義エラー
+// EXPECT: compile-error
+// DESCRIPTION: 同名の関数を複数定義するとコンパイルエラーになることを検証する
+
+fn foo() -> i32 {
+    1
+}
+
+fn foo() -> i32 {
+    2
+}
+
+fn main() -> i32 {
+    foo()
+}

@@ -1,0 +1,29 @@
+// TEST: 早期リターン
+// EXPECT: success
+// DESCRIPTION: return文による早期リターンが正しく動作することを検証する
+
+fn abs(x: i32) -> i32 {
+    if x < 0 {
+        return -x;
+    }
+    x
+}
+
+fn clamp(x: i32, lo: i32, hi: i32) -> i32 {
+    if x < lo {
+        return lo;
+    }
+    if x > hi {
+        return hi;
+    }
+    x
+}
+
+fn main() -> i32 {
+    print_i32(abs(-10));       // 10
+    print_i32(abs(5));         // 5
+    print_i32(clamp(50, 0, 100));   // 50
+    print_i32(clamp(-10, 0, 100));  // 0
+    print_i32(clamp(200, 0, 100));  // 100
+    0
+}

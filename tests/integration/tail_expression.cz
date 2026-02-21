@@ -1,0 +1,28 @@
+// TEST: 末尾式による暗黙の戻り値
+// EXPECT: success
+// DESCRIPTION: ブロック末尾のセミコロンなし式が暗黙の戻り値となることを検証する
+
+fn double(x: i32) -> i32 {
+    x * 2
+}
+
+fn complex_calc(x: i32) -> i32 {
+    let a: i32 = x + 1;
+    let b: i32 = a * 2;
+    b - 3
+}
+
+fn with_block() -> i32 {
+    let result: i32 = {
+        let tmp: i32 = 10;
+        tmp + 5
+    };
+    result
+}
+
+fn main() -> i32 {
+    print_i32(double(5));          // 10
+    print_i32(complex_calc(3));    // 5
+    print_i32(with_block());       // 15
+    0
+}

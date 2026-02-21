@@ -1,0 +1,10 @@
+// TEST: let文の構文解析
+// EXPECT: success
+// DESCRIPTION: イミュータブルおよびミュータブルなlet文が正しく解析されることを検証する
+
+fn main() -> i32 {
+    let x: i32 = 10;
+    let mut y: i32 = 20;
+    let z: i32 = x + y;
+    z
+}

@@ -1,0 +1,15 @@
+// TEST: 比較演算のコード生成
+// EXPECT: success
+// DESCRIPTION: 比較演算子が正しくコード生成されることを検証する
+
+fn main() -> i32 {
+    let a: i32 = if 1 == 1 { 1 } else { 0 };
+    let b: i32 = if 1 != 2 { 1 } else { 0 };
+    let c: i32 = if 1 < 2 { 1 } else { 0 };
+    let d: i32 = if 2 > 1 { 1 } else { 0 };
+    let e: i32 = if 1 <= 1 { 1 } else { 0 };
+    let f: i32 = if 2 >= 2 { 1 } else { 0 };
+
+    // すべて1ならば合計6
+    a + b + c + d + e + f
+}
