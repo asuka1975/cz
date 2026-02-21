@@ -55,13 +55,14 @@ Cz コンパイラの開発は以下の **3フェーズ** を厳密に順守し�
 
 ```cz
 // TEST: <テスト名>
-// EXPECT: <success | warning | compile-error | runtime-error>
+// EXPECT: <success | warning | compile-error | link-error | runtime-error>
 // DESCRIPTION: <このテストが検証する内容の説明>
 ```
 
 - `EXPECT: success` - コンパイル・実行ともに成功することを期待
 - `EXPECT: warning` - コンパイルは成功するが警告が発生することを期待
 - `EXPECT: compile-error` - コンパイルエラーになることを期待
+- `EXPECT: link-error` - コンパイル (LLVM IR 生成) は成功するがリンクエラーになることを期待
 - `EXPECT: runtime-error` - コンパイルは成功するがランタイムエラーになることを期待
 
 ## Rules
