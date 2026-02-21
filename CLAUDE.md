@@ -30,7 +30,7 @@ Cz コンパイラの開発は以下の **3フェーズ** を厳密に順守し�
 ## Directory Structure
 
 ```
-cz/
+<repository-root>/
 ├── CLAUDE.md                  # This file
 ├── docs/
 │   └── spec/                  # Language specification documents
@@ -54,12 +54,13 @@ cz/
 テストケースの `.cz` ファイルには以下のメタデータをコメントで埋め込む:
 
 ```cz
-// TEST: <test name>
-// EXPECT: <success | compile-error | runtime-error>
-// DESCRIPTION: <what this test verifies>
+// TEST: <テスト名>
+// EXPECT: <success | warning | compile-error | runtime-error>
+// DESCRIPTION: <このテストが検証する内容の説明>
 ```
 
 - `EXPECT: success` - コンパイル・実行ともに成功することを期待
+- `EXPECT: warning` - コンパイルは成功するが警告が発生することを期待
 - `EXPECT: compile-error` - コンパイルエラーになることを期待
 - `EXPECT: runtime-error` - コンパイルは成功するがランタイムエラーになることを期待
 

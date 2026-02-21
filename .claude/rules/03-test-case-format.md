@@ -6,13 +6,14 @@
 
 ```cz
 // TEST: <テスト名>
-// EXPECT: <success | compile-error | runtime-error>
+// EXPECT: <success | warning | compile-error | runtime-error>
 // DESCRIPTION: <このテストが検証する内容の説明>
 ```
 
 ## EXPECT の種類
 
 - `success` - コンパイルと実行の両方が成功することを期待
+- `warning` - コンパイルは成功するが警告が発生することを期待
 - `compile-error` - コンパイル時にエラーが発生することを期待 (不正なコードのテスト)
 - `runtime-error` - コンパイルは成功するがランタイムエラーが発生することを期待
 
