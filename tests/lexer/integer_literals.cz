@@ -1,0 +1,11 @@
+// TEST: 整数リテラルの字句解析
+// EXPECT: success
+// DESCRIPTION: 各種整数リテラルが正しくトークン化されることを検証する
+
+fn main() -> i32 {
+    let a: i32 = 0;
+    let b: i32 = 42;
+    let c: i32 = 1000000;
+    let d: i32 = 007;
+    0
+}

@@ -1,0 +1,26 @@
+// TEST: 識別子の字句解析
+// EXPECT: success
+// DESCRIPTION: 各種識別子が正しくトークン化されることを検証する
+
+fn _private() -> i32 {
+    0
+}
+
+fn camelCase() -> i32 {
+    0
+}
+
+fn snake_case() -> i32 {
+    0
+}
+
+fn with_numbers_123() -> i32 {
+    0
+}
+
+fn main() -> i32 {
+    let _x: i32 = 1;
+    let abc_def: i32 = 2;
+    let a1b2c3: i32 = 3;
+    0
+}

@@ -1,0 +1,14 @@
+// TEST: whileループによる合計計算
+// EXPECT: success
+// DESCRIPTION: whileループとミュータブル変数を使った合計計算が正しく動作することを検証する
+
+fn main() -> i32 {
+    let mut sum: i32 = 0;
+    let mut i: i32 = 1;
+    while i <= 10 {
+        sum = sum + i;
+        i = i + 1;
+    }
+    print_i32(sum);  // 55
+    sum
+}

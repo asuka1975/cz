@@ -1,0 +1,25 @@
+// TEST: 相互再帰
+// EXPECT: success
+// DESCRIPTION: 関数同士の相互再帰呼び出しが正しく動作することを検証する
+
+fn is_even(n: i32) -> i32 {
+    if n == 0 {
+        true
+    } else {
+        is_odd(n - 1)
+    }
+}
+
+fn is_odd(n: i32) -> i32 {
+    if n == 0 {
+        false
+    } else {
+        is_even(n - 1)
+    }
+}
+
+fn main() -> i32 {
+    print_i32(is_even(4));   // 1 (true)
+    print_i32(is_odd(3));    // 1 (true)
+    0
+}

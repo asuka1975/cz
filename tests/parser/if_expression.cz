@@ -1,0 +1,28 @@
+// TEST: if式の構文解析
+// EXPECT: success
+// DESCRIPTION: if式（値を返す形式）が正しく解析されることを検証する
+
+fn main() -> i32 {
+    let x: i32 = 10;
+
+    // if-else 式を値として使用
+    let a: i32 = if x > 5 { 1 } else { 0 };
+
+    // else if チェーン
+    let b: i32 = if x > 100 {
+        3
+    } else if x > 50 {
+        2
+    } else if x > 0 {
+        1
+    } else {
+        0
+    };
+
+    // if を文として使用
+    if a == 1 {
+        print_i32(a);
+    }
+
+    b
+}

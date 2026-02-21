@@ -1,0 +1,7 @@
+// TEST: 最小のプログラム
+// EXPECT: success
+// DESCRIPTION: 最も単純なCzプログラムが正しくコンパイル・実行されることを検証する
+
+fn main() -> i32 {
+    0
+}

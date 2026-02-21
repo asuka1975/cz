@@ -1,0 +1,10 @@
+// TEST: スコープ外の変数参照エラー
+// EXPECT: compile-error
+// DESCRIPTION: ブロック外から内側の変数を参照するとコンパイルエラーになることを検証する
+
+fn main() -> i32 {
+    {
+        let x: i32 = 10;
+    }
+    x
+}

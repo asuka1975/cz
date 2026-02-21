@@ -1,0 +1,12 @@
+// TEST: 戻り値がない関数エラー
+// EXPECT: compile-error
+// DESCRIPTION: 戻り値型が指定されているのに末尾式がない関数がコンパイルエラーになることを検証する
+
+fn bad() -> i32 {
+    let x: i32 = 42;
+    x + 1;
+}
+
+fn main() -> i32 {
+    bad()
+}

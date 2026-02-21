@@ -1,0 +1,7 @@
+// TEST: main関数がないプログラム
+// EXPECT: link-error
+// DESCRIPTION: main関数が定義されていないプログラムはLLVM IR生成まで成功するがリンクエラーになることを検証する
+
+fn foo() -> i32 {
+    42
+}

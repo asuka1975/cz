@@ -1,0 +1,17 @@
+// TEST: キーワードの字句解析
+// EXPECT: success
+// DESCRIPTION: すべてのキーワードが正しくトークン化されることを検証する
+
+fn main() -> i32 {
+    let mut x: i32 = 0;
+    if true {
+        x = 1;
+    } else {
+        x = 0;
+    }
+    while false {
+        x = x + 1;
+    }
+    return x;
+    0
+}

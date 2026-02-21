@@ -1,0 +1,9 @@
+// TEST: 同一スコープでのシャドーイング禁止
+// EXPECT: compile-error
+// DESCRIPTION: 同一スコープ内で同名の変数をletで再宣言するとコンパイルエラーになることを検証する
+
+fn main() -> i32 {
+    let x: i32 = 10;
+    let x: i32 = x + 1;
+    x
+}

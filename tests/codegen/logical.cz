@@ -1,0 +1,21 @@
+// TEST: 論理演算のコード生成
+// EXPECT: success
+// DESCRIPTION: 論理演算子と短絡評価が正しくコード生成されることを検証する
+
+fn main() -> i32 {
+    // AND
+    let a: i32 = true && true;    // 1
+    let b: i32 = true && false;   // 0
+    let c: i32 = false && true;   // 0 (短絡評価)
+
+    // OR
+    let d: i32 = false || true;   // 1
+    let e: i32 = true || false;   // true の値 (短絡評価)
+    let f: i32 = false || false;  // 0
+
+    // NOT
+    let g: i32 = !true;   // 0
+    let h: i32 = !false;  // 1
+
+    0
+}

@@ -1,0 +1,7 @@
+// TEST: 未定義変数の参照エラー
+// EXPECT: compile-error
+// DESCRIPTION: 宣言されていない変数を参照するとコンパイルエラーになることを検証する
+
+fn main() -> i32 {
+    x
+}
