@@ -12,13 +12,13 @@ use std::process::Command;
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("使い方: czc <ソースファイル.cz> [-o <出力ファイル>] [--emit-c]");
+        eprintln!("使い方: czc <ソースファイル.cz> [-o <出力ファイル>] [--emit-llvm]");
         std::process::exit(1);
     }
 
     let source_file = &args[1];
     let mut output_file = "a.out".to_string();
-    let mut emit_c = false;
+    let mut emit_llvm = false;
 
     let mut i = 2;
     while i < args.len() {
@@ -29,8 +29,8 @@ fn main() {
                     output_file = args[i].clone();
                 }
             }
-            "--emit-c" => {
-                emit_c = true;
+            "--emit-llvm" => {
+                emit_llvm = true;
             }
             _ => {}
         }
@@ -74,30 +74,29 @@ fn main() {
         std::process::exit(1);
     }
 
-    // Code generation (Cz -> C)
+    // Code generation (Cz -> LLVM IR)
     let mut codegen = codegen::CodeGen::new();
-    let c_code = codegen.generate(&program);
+    let llvm_ir = codegen.generate(&program);
 
-    if emit_c {
-        println!("{}", c_code);
+    if emit_llvm {
+        println!("{}", llvm_ir);
         return;
     }
 
-    // Write C to temp file and compile with cc
-    let c_file = format!("{}.c", output_file);
-    if let Err(e) = fs::write(&c_file, &c_code) {
-        eprintln!("エラー: Cファイルの書き出しに失敗: {}", e);
+    // Write LLVM IR to temp file and compile with clang
+    let ll_file = format!("{}.ll", output_file);
+    if let Err(e) = fs::write(&ll_file, &llvm_ir) {
+        eprintln!("エラー: LLVM IRファイルの書き出しに失敗: {}", e);
         std::process::exit(1);
     }
 
-    let cc_result = Command::new("cc")
-        .args([&c_file, "-o", &output_file])
+    let clang_result = Command::new("clang")
+        .args([&ll_file, "-o", &output_file, "-Wno-override-module"])
         .output();
 
-    // Clean up temp C file
-    let _ = fs::remove_file(&c_file);
+    let _ = fs::remove_file(&ll_file);
 
-    match cc_result {
+    match clang_result {
         Ok(output) => {
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -106,7 +105,7 @@ fn main() {
             }
         }
         Err(e) => {
-            eprintln!("エラー: Cコンパイラの実行に失敗: {}", e);
+            eprintln!("エラー: clang の実行に失敗: {}", e);
             std::process::exit(1);
         }
     }
