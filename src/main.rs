@@ -5,6 +5,7 @@ mod parser;
 mod semantic;
 mod token;
 
+use inkwell::context::Context;
 use std::env;
 use std::fs;
 use std::process::Command;
@@ -74,27 +75,29 @@ fn main() {
         std::process::exit(1);
     }
 
-    // Code generation (Cz -> LLVM IR)
-    let mut codegen = codegen::CodeGen::new();
-    let llvm_ir = codegen.generate(&program);
+    // Code generation (Cz -> LLVM IR via inkwell)
+    let context = Context::create();
+    let mut codegen = codegen::CodeGen::new(&context);
+    codegen.generate(&program);
 
     if emit_llvm {
-        println!("{}", llvm_ir);
+        println!("{}", codegen.print_to_string());
         return;
     }
 
-    // Write LLVM IR to temp file and compile with clang
-    let ll_file = format!("{}.ll", output_file);
-    if let Err(e) = fs::write(&ll_file, &llvm_ir) {
-        eprintln!("エラー: LLVM IRファイルの書き出しに失敗: {}", e);
+    // Write object file
+    let obj_file = format!("{}.o", output_file);
+    if let Err(e) = codegen.write_object_file(std::path::Path::new(&obj_file)) {
+        eprintln!("エラー: オブジェクトファイルの生成に失敗: {}", e);
         std::process::exit(1);
     }
 
+    // Link with clang
     let clang_result = Command::new("clang")
-        .args([&ll_file, "-o", &output_file, "-Wno-override-module"])
+        .args([&obj_file, "-o", &output_file])
         .output();
 
-    let _ = fs::remove_file(&ll_file);
+    let _ = fs::remove_file(&obj_file);
 
     match clang_result {
         Ok(output) => {
