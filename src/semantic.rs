@@ -366,18 +366,18 @@ mod tests {
 
     #[test]
     fn valid_mutable_reassign() {
-        assert!(
-            analyze("fn main() -> i32 { let mut x: i32 = 0; x = 42; x }").is_ok()
-        );
+        assert!(analyze("fn main() -> i32 { let mut x: i32 = 0; x = 42; x }").is_ok());
     }
 
     #[test]
     fn valid_forward_reference() {
-        assert!(analyze(
-            "fn main() -> i32 { foo() }
+        assert!(
+            analyze(
+                "fn main() -> i32 { foo() }
              fn foo() -> i32 { 42 }"
-        )
-        .is_ok());
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -403,17 +403,21 @@ mod tests {
             "fn foo(a: i32) -> i32 { a }
              fn main() -> i32 { foo(1, 2) }",
         );
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("1 個の引数を取りますが 2 個渡されました")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("1 個の引数を取りますが 2 個渡されました"))
+        );
     }
 
     #[test]
     fn immutable_reassign() {
         let errors = analyze_errors("fn main() -> i32 { let x: i32 = 0; x = 1; x }");
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("イミュータブル変数 'x' への再代入")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("イミュータブル変数 'x' への再代入"))
+        );
     }
 
     #[test]
@@ -423,9 +427,11 @@ mod tests {
              fn foo() -> i32 { 1 }
              fn main() -> i32 { 0 }",
         );
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("関数 'foo' は既に定義されています")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("関数 'foo' は既に定義されています"))
+        );
     }
 
     #[test]
@@ -449,23 +455,23 @@ mod tests {
     #[test]
     fn if_value_requires_else() {
         let errors = analyze_errors("fn main() -> i32 { if true { 1 } }");
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("else 分岐が必要です")));
+        assert!(errors.iter().any(|e| e.contains("else 分岐が必要です")));
     }
 
     #[test]
     fn valid_while_loop() {
-        assert!(analyze(
-            "fn main() -> i32 {
+        assert!(
+            analyze(
+                "fn main() -> i32 {
                 let mut x: i32 = 0;
                 while x < 10 {
                     x = x + 1;
                 }
                 x
             }"
-        )
-        .is_ok());
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -475,18 +481,16 @@ mod tests {
 
     #[test]
     fn valid_if_else_as_value() {
-        assert!(
-            analyze("fn main() -> i32 { if true { 1 } else { 0 } }").is_ok()
-        );
+        assert!(analyze("fn main() -> i32 { if true { 1 } else { 0 } }").is_ok());
     }
 
     #[test]
     fn duplicate_var_in_same_scope() {
-        let errors = analyze_errors(
-            "fn main() -> i32 { let x: i32 = 1; let x: i32 = 2; x }",
+        let errors = analyze_errors("fn main() -> i32 { let x: i32 = 1; let x: i32 = 2; x }");
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("変数 'x' は同一スコープ内で既に宣言されています"))
         );
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("変数 'x' は同一スコープ内で既に宣言されています")));
     }
 }

@@ -487,10 +487,7 @@ mod tests {
     fn let_statement() {
         let prog = parse_ok("fn main() -> i32 { let x: i32 = 42; x }");
         assert_eq!(prog.functions[0].body.stmts.len(), 1);
-        if let Stmt::Let {
-            name, mutable, ..
-        } = &prog.functions[0].body.stmts[0]
-        {
+        if let Stmt::Let { name, mutable, .. } = &prog.functions[0].body.stmts[0] {
             assert_eq!(name, "x");
             assert!(!mutable);
         } else {
@@ -577,10 +574,7 @@ mod tests {
             {
                 assert!(matches!(
                     right.as_ref(),
-                    Expr::BinaryOp {
-                        op: BinOp::Mul,
-                        ..
-                    }
+                    Expr::BinaryOp { op: BinOp::Mul, .. }
                 ));
             } else {
                 panic!("expected Add at top level");
@@ -593,7 +587,9 @@ mod tests {
     #[test]
     fn operator_precedence_comparison_over_logical() {
         // a < b && c > d should parse as (a < b) && (c > d)
-        let prog = parse_ok("fn main() -> i32 { let a: i32 = 1; let b: i32 = 2; let c: i32 = 3; let d: i32 = 4; if a < b && c > d { 1 } else { 0 } }");
+        let prog = parse_ok(
+            "fn main() -> i32 { let a: i32 = 1; let b: i32 = 2; let c: i32 = 3; let d: i32 = 4; if a < b && c > d { 1 } else { 0 } }",
+        );
         // If it parses successfully, precedence is correct (otherwise && would consume < as operand)
         assert_eq!(prog.functions.len(), 1);
     }
@@ -666,9 +662,7 @@ mod tests {
 
     #[test]
     fn if_else_if() {
-        let prog = parse_ok(
-            "fn main() -> i32 { if true { 1 } else if false { 2 } else { 3 } }",
-        );
+        let prog = parse_ok("fn main() -> i32 { if true { 1 } else if false { 2 } else { 3 } }");
         if let Some(expr) = &prog.functions[0].body.expr {
             if let Expr::If { else_block, .. } = expr.as_ref() {
                 assert!(matches!(
@@ -716,10 +710,7 @@ mod tests {
             {
                 assert!(matches!(
                     left.as_ref(),
-                    Expr::BinaryOp {
-                        op: BinOp::Add,
-                        ..
-                    }
+                    Expr::BinaryOp { op: BinOp::Add, .. }
                 ));
             } else {
                 panic!("expected Mul at top level");
