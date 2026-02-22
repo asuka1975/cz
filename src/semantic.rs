@@ -22,10 +22,7 @@ pub struct SemanticAnalyzer {
 impl SemanticAnalyzer {
     pub fn new() -> Self {
         let mut functions = HashMap::new();
-        functions.insert(
-            "print_i32".to_string(),
-            FuncInfo { param_count: 1 },
-        );
+        functions.insert("print_i32".to_string(), FuncInfo { param_count: 1 });
         Self {
             scopes: Vec::new(),
             functions,
@@ -179,28 +176,21 @@ impl SemanticAnalyzer {
             } => {
                 match else_block {
                     None => {
-                        self.errors.push(
-                            "if 式を値として使用するには else 分岐が必要です".to_string(),
-                        );
+                        self.errors
+                            .push("if 式を値として使用するには else 分岐が必要です".to_string());
                     }
                     Some(else_clause) => {
                         // Check then block has value
-                        if then_block.expr.is_none()
-                            && !self.block_always_returns(then_block)
-                        {
-                            self.errors.push(
-                                "if 式の then 分岐に値がありません".to_string(),
-                            );
+                        if then_block.expr.is_none() && !self.block_always_returns(then_block) {
+                            self.errors
+                                .push("if 式の then 分岐に値がありません".to_string());
                         }
                         // Check else block has value
                         match else_clause.as_ref() {
                             ElseClause::ElseBlock(block) => {
-                                if block.expr.is_none()
-                                    && !self.block_always_returns(block)
-                                {
-                                    self.errors.push(
-                                        "if 式の else 分岐に値がありません".to_string(),
-                                    );
+                                if block.expr.is_none() && !self.block_always_returns(block) {
+                                    self.errors
+                                        .push("if 式の else 分岐に値がありません".to_string());
                                 }
                             }
                             ElseClause::ElseIf(if_expr) => {
@@ -212,9 +202,7 @@ impl SemanticAnalyzer {
             }
             Expr::Block(block) => {
                 if block.expr.is_none() && !self.block_always_returns(block) {
-                    self.errors.push(
-                        "ブロック式に値がありません".to_string(),
-                    );
+                    self.errors.push("ブロック式に値がありません".to_string());
                 }
             }
             _ => {}
@@ -226,10 +214,8 @@ impl SemanticAnalyzer {
             Expr::IntegerLiteral(_) | Expr::BoolLiteral(_) => {}
             Expr::Identifier(name, line) => {
                 if !self.lookup_var(name) {
-                    self.errors.push(format!(
-                        "{}行目: 未定義の変数 '{}'",
-                        line, name
-                    ));
+                    self.errors
+                        .push(format!("{}行目: 未定義の変数 '{}'", line, name));
                 }
             }
             Expr::BinaryOp { left, right, .. } => {
@@ -247,14 +233,15 @@ impl SemanticAnalyzer {
                     if args.len() != func_info.param_count {
                         self.errors.push(format!(
                             "{}行目: 関数 '{}' は {} 個の引数を取りますが {} 個渡されました",
-                            line, name, func_info.param_count, args.len()
+                            line,
+                            name,
+                            func_info.param_count,
+                            args.len()
                         ));
                     }
                 } else {
-                    self.errors.push(format!(
-                        "{}行目: 未定義の関数 '{}'",
-                        line, name
-                    ));
+                    self.errors
+                        .push(format!("{}行目: 未定義の関数 '{}'", line, name));
                 }
             }
             Expr::Assign { name, value, line } => {
@@ -267,10 +254,8 @@ impl SemanticAnalyzer {
                         ));
                     }
                 } else {
-                    self.errors.push(format!(
-                        "{}行目: 未定義の変数 '{}'",
-                        line, name
-                    ));
+                    self.errors
+                        .push(format!("{}行目: 未定義の変数 '{}'", line, name));
                 }
             }
             Expr::If {

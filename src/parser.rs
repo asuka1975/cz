@@ -22,10 +22,7 @@ impl Parser {
     // --- Helpers ---
 
     fn expr_ends_with_block(expr: &Expr) -> bool {
-        matches!(
-            expr,
-            Expr::If { .. } | Expr::Block(_) | Expr::Assign { .. }
-        )
+        matches!(expr, Expr::If { .. } | Expr::Block(_) | Expr::Assign { .. })
     }
 
     fn peek(&self) -> &Token {
