@@ -1,6 +1,8 @@
 // TEST: 演算子と記号の字句解析
 // EXPECT: success
 // DESCRIPTION: すべての演算子と記号トークンが正しく認識されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     let a: i32 = 1 + 2;

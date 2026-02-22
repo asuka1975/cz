@@ -1,6 +1,8 @@
 // TEST: 関数定義の構文解析
 // EXPECT: success
 // DESCRIPTION: 各種関数定義パターンが正しく解析されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT:
 
 // 引数なし
 fn zero() -> i32 {

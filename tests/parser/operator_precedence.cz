@@ -1,6 +1,8 @@
 // TEST: 演算子の優先順位
 // EXPECT: success
 // DESCRIPTION: 演算子の優先順位が正しく解析されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     // 乗算が加算より優先

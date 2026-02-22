@@ -1,6 +1,8 @@
 // TEST: if式の構文解析
 // EXPECT: success
 // DESCRIPTION: if式（値を返す形式）が正しく解析されることを検証する
+// EXPECTED_EXIT_CODE: 1
+// EXPECTED_STDOUT: 1\n
 
 fn main() -> i32 {
     let x: i32 = 10;

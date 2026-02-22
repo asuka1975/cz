@@ -1,6 +1,8 @@
 // TEST: if式の値としての使用
 // EXPECT: success
 // DESCRIPTION: if式が値を返し、変数束縛や関数の戻り値として使えることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 20\n-1\n0\n1\n
 
 fn max(a: i32, b: i32) -> i32 {
     if a > b { a } else { b }

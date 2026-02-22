@@ -1,6 +1,8 @@
 // TEST: 関数の前方参照
 // EXPECT: success
 // DESCRIPTION: 定義前の関数を呼び出せること（前方参照）を検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 3\n
 
 fn main() -> i32 {
     let result: i32 = add(1, 2);

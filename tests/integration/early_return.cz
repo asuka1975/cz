@@ -1,6 +1,8 @@
 // TEST: 早期リターン
 // EXPECT: success
 // DESCRIPTION: return文による早期リターンが正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 10\n5\n50\n0\n100\n
 
 fn abs(x: i32) -> i32 {
     if x < 0 {

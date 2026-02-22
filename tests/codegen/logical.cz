@@ -1,6 +1,8 @@
 // TEST: 論理演算のコード生成
 // EXPECT: success
 // DESCRIPTION: 論理演算子と短絡評価が正しくコード生成されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     // AND

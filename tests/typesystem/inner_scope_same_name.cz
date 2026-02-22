@@ -1,6 +1,8 @@
 // TEST: 内側スコープでの同名変数宣言
 // EXPECT: success
 // DESCRIPTION: 異なるスコープ（内側のブロック）では同名の変数を宣言できることを検証する
+// EXPECTED_EXIT_CODE: 10
+// EXPECTED_STDOUT: 20\n
 
 fn main() -> i32 {
     let x: i32 = 10;

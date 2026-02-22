@@ -1,6 +1,8 @@
 // TEST: 整数リテラルの字句解析
 // EXPECT: success
 // DESCRIPTION: 各種整数リテラルが正しくトークン化されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     let a: i32 = 0;

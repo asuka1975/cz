@@ -1,6 +1,8 @@
 // TEST: while文の構文解析
 // EXPECT: success
 // DESCRIPTION: while文が正しく解析されることを検証する
+// EXPECTED_EXIT_CODE: 45
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     let mut i: i32 = 0;

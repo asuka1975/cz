@@ -1,6 +1,8 @@
 // TEST: キーワードの字句解析
 // EXPECT: success
 // DESCRIPTION: すべてのキーワードが正しくトークン化されることを検証する
+// EXPECTED_EXIT_CODE: 1
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     let mut x: i32 = 0;
