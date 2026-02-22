@@ -1,4 +1,7 @@
 use crate::ast::*;
+use inkwell::AddressSpace;
+use inkwell::IntPredicate;
+use inkwell::OptimizationLevel;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
@@ -6,9 +9,6 @@ use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
 use inkwell::values::{BasicMetadataValueEnum, FunctionValue, IntValue, PointerValue};
-use inkwell::AddressSpace;
-use inkwell::IntPredicate;
-use inkwell::OptimizationLevel;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -414,15 +414,11 @@ impl<'ctx> CodeGen<'ctx> {
             .build_int_z_extend(rcond, i32_type, "and.rext")
             .unwrap();
         self.builder.build_store(result_addr, rext).unwrap();
-        self.builder
-            .build_unconditional_branch(merge_bb)
-            .unwrap();
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
 
         self.builder.position_at_end(false_bb);
         self.builder.build_store(result_addr, zero).unwrap();
-        self.builder
-            .build_unconditional_branch(merge_bb)
-            .unwrap();
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
 
         self.builder.position_at_end(merge_bb);
         self.builder
@@ -454,16 +450,12 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.builder.position_at_end(true_bb);
         self.builder.build_store(result_addr, lval).unwrap();
-        self.builder
-            .build_unconditional_branch(merge_bb)
-            .unwrap();
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
 
         self.builder.position_at_end(rhs_bb);
         let rval = self.emit_expr(right);
         self.builder.build_store(result_addr, rval).unwrap();
-        self.builder
-            .build_unconditional_branch(merge_bb)
-            .unwrap();
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
 
         self.builder.position_at_end(merge_bb);
         self.builder
@@ -495,18 +487,10 @@ impl<'ctx> CodeGen<'ctx> {
         // Trap: print error and exit
         self.builder.position_at_end(trap_bb);
         self.builder
-            .build_call(
-                self.printf_fn,
-                &[self.div_zero_msg.into()],
-                "trap.printf",
-            )
+            .build_call(self.printf_fn, &[self.div_zero_msg.into()], "trap.printf")
             .unwrap();
         self.builder
-            .build_call(
-                self.exit_fn,
-                &[i32_type.const_int(1, false).into()],
-                "",
-            )
+            .build_call(self.exit_fn, &[i32_type.const_int(1, false).into()], "")
             .unwrap();
         self.builder.build_unreachable().unwrap();
 
@@ -554,9 +538,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(then_bb);
         let then_val = self.emit_block_value(then_block);
         self.builder.build_store(result_addr, then_val).unwrap();
-        self.builder
-            .build_unconditional_branch(merge_bb)
-            .unwrap();
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
 
         self.builder.position_at_end(else_bb);
         let else_val = match else_clause {
@@ -564,9 +546,7 @@ impl<'ctx> CodeGen<'ctx> {
             ElseClause::ElseIf(if_expr) => self.emit_expr(if_expr),
         };
         self.builder.build_store(result_addr, else_val).unwrap();
-        self.builder
-            .build_unconditional_branch(merge_bb)
-            .unwrap();
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
 
         self.builder.position_at_end(merge_bb);
         self.builder

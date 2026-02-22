@@ -153,10 +153,7 @@ impl Lexer {
                     self.advance();
                     TokenKind::AmpAmp
                 } else {
-                    return Err(format!(
-                        "{}:{}: 予期しない文字 '&'",
-                        line, column
-                    ));
+                    return Err(format!("{}:{}: 予期しない文字 '&'", line, column));
                 }
             }
             '|' => {
@@ -164,18 +161,12 @@ impl Lexer {
                     self.advance();
                     TokenKind::PipePipe
                 } else {
-                    return Err(format!(
-                        "{}:{}: 予期しない文字 '|'",
-                        line, column
-                    ));
+                    return Err(format!("{}:{}: 予期しない文字 '|'", line, column));
                 }
             }
             '/' => TokenKind::Slash,
             _ => {
-                return Err(format!(
-                    "{}:{}: 予期しない文字 '{}'",
-                    line, column, ch
-                ));
+                return Err(format!("{}:{}: 予期しない文字 '{}'", line, column, ch));
             }
         };
 
@@ -187,17 +178,15 @@ impl Lexer {
         while !self.is_at_end() && self.peek().is_ascii_digit() {
             num_str.push(self.advance());
         }
-        let value: i64 = num_str.parse().map_err(|_| {
-            format!("{}:{}: 整数リテラルが大きすぎます", line, column)
-        })?;
+        let value: i64 = num_str
+            .parse()
+            .map_err(|_| format!("{}:{}: 整数リテラルが大きすぎます", line, column))?;
         Ok(Token::new(TokenKind::IntegerLiteral(value), line, column))
     }
 
     fn read_identifier_or_keyword(&mut self, line: usize, column: usize) -> Token {
         let mut ident = String::new();
-        while !self.is_at_end()
-            && (self.peek().is_ascii_alphanumeric() || self.peek() == '_')
-        {
+        while !self.is_at_end() && (self.peek().is_ascii_alphanumeric() || self.peek() == '_') {
             ident.push(self.advance());
         }
         let kind = match ident.as_str() {

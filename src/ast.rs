@@ -4,6 +4,7 @@ pub struct Program {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct FunctionDef {
     pub name: String,
     pub params: Vec<Param>,
@@ -13,6 +14,7 @@ pub struct FunctionDef {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Param {
     pub name: String,
     pub param_type: Type,
@@ -30,6 +32,7 @@ pub struct Block {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum Stmt {
     Let {
         name: String,
