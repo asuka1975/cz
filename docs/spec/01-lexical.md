@@ -12,7 +12,20 @@ Cz のソースコードは UTF-8 でエンコードされたテキストファ�
 
 ```
 fn let mut return if else while true false
+match break continue struct enum as
 ```
+
+**MS2 で追加**: `match`, `break`, `continue`, `struct`, `enum`, `as`
+
+### 型キーワード
+
+以下はプリミティブ型を表すキーワードである:
+
+```
+i8 i16 i32 i64 f32 f64 bool
+```
+
+**MS2 で追加**: `i8`, `i16`, `i64`, `f32`, `f64`, `bool`
 
 ### 識別子
 
@@ -24,17 +37,42 @@ digit      = '0'..'9'
 
 - 識別子はアルファベットまたはアンダースコアで始まる
 - 2 文字目以降はアルファベット、数字、アンダースコアが使用可能
-- キーワードと同名の識別子は使用不可
+- キーワード・型キーワードと同名の識別子は使用不可
+
+### ラベル (MS2)
+
+```bnf
+label = "'" identifier
+```
+
+- ループラベルはシングルクォートで始まる識別子で表現する
+- 例: `'outer`, `'loop1`
+- ラベルは `while` ループの前に `'label:` の形式で付与する
 
 ### 整数リテラル
 
 ```bnf
-integer_literal = digit+
+integer_literal = digit+ [integer_suffix]
+integer_suffix  = "i8" | "i16" | "i32" | "i64"
 ```
 
-- 10 進整数のみサポート (MS1)
+- 10 進整数のみサポート
 - 先頭のゼロは許可する (例: `007`)
 - 負の整数リテラルは存在しない (単項マイナス演算子と整数リテラルの組み合わせで表現)
+- **MS2**: 型サフィックスを付けることで整数の型を明示できる (例: `42i64`)
+- サフィックスなしの整数リテラルのデフォルト型は `i32`
+
+### 浮動小数点リテラル (MS2)
+
+```bnf
+float_literal  = digit+ "." digit+ [float_suffix]
+float_suffix   = "f32" | "f64"
+```
+
+- 小数点の前後に少なくとも 1 桁の数字が必要 (`.5` や `1.` は不可、`0.5` や `1.0` と書く)
+- 型サフィックスを付けることで浮動小数点の型を明示できる (例: `3.14f32`)
+- サフィックスなしの浮動小数点リテラルのデフォルト型は `f64`
+- 指数表記 (`1.0e10`) はサポートしない
 
 ### 記号・演算子トークン
 
@@ -46,7 +84,12 @@ integer_literal = digit+
 ( ) { }
 ,  :  ;
 ->
+.             (MS2: フィールドアクセス / タプルインデックス)
+..=           (MS2: 範囲パターン)
+=>            (MS2: match アーム)
 ```
+
+**MS2 で追加**: `.`, `..=`, `=>`
 
 ### コメント
 
@@ -55,7 +98,7 @@ line_comment = '//' (任意の文字)* (改行 | EOF)
 ```
 
 - `//` から行末までが行コメント
-- ブロックコメント (`/* ... */`) は MS1 ではサポートしない
+- ブロックコメント (`/* ... */`) はサポートしない
 
 ### 空白
 
@@ -67,32 +110,49 @@ line_comment = '//' (任意の文字)* (改行 | EOF)
 
 | トークン種別 | 例 |
 |---|---|
-| Keyword | `fn`, `let`, `mut`, `return`, `if`, `else`, `while`, `true`, `false` |
+| Keyword | `fn`, `let`, `mut`, `return`, `if`, `else`, `while`, `true`, `false`, `match`, `break`, `continue`, `struct`, `enum`, `as` |
+| TypeKeyword | `i8`, `i16`, `i32`, `i64`, `f32`, `f64`, `bool` |
 | Identifier | `foo`, `bar_baz`, `_x`, `main` |
-| IntegerLiteral | `0`, `42`, `100` |
-| Operator / Punctuation | `+`, `->`, `==`, `{`, `;` 等 |
+| Label | `'outer`, `'loop1` |
+| IntegerLiteral | `0`, `42`, `100i64` |
+| FloatLiteral | `3.14`, `1.0f32` |
+| Operator / Punctuation | `+`, `->`, `==`, `{`, `;`, `.`, `..=`, `=>` 等 |
 | EOF | ファイル終端 |
 
 ## 例
 
 ```cz
-// これはコメント
-fn main() -> i32 {
-    let x: i32 = 42;
-    x
+// MS2 の新しいトークン例
+struct Point { x: i32, y: i32 }
+
+enum Color {
+    Red,
+    Rgb(i32, i32, i32),
 }
-```
 
-上記のソースコードは以下のトークン列に変換される:
+fn main() -> i32 {
+    let val = 42i64;
+    let pi = 3.14f32;
+    let flag: bool = true;
+    let p = Point { x: 1, y: 2 };
+    let t = (1, true);
 
-```
-Keyword(fn) Identifier(main) LParen RParen Arrow Keyword(i32)
-LBrace Keyword(let) Identifier(x) Colon Keyword(i32) Assign
-IntegerLiteral(42) Semicolon Identifier(x) RBrace EOF
+    'outer: while true {
+        break 'outer;
+    }
+
+    match val as i32 {
+        1..=10 => print_i32(1),
+        _ => print_i32(0),
+    }
+
+    p.x
+}
 ```
 
 ## 制約・制限
 
-- MS1 では 10 進整数リテラルのみサポートする (16 進、8 進、2 進は将来対応)
-- 文字列リテラルは MS1 ではサポートしない
-- ブロックコメントは MS1 ではサポートしない
+- 10 進整数リテラルのみサポートする (16 進、8 進、2 進は将来対応)
+- 文字列リテラルはサポートしない
+- ブロックコメントはサポートしない
+- 浮動小数点の指数表記はサポートしない
