@@ -1,0 +1,45 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: rust:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM and Clang
+        run: |
+          apt-get update && apt-get install -y \
+            llvm-19-dev \
+            libpolly-19-dev \
+            clang \
+            zlib1g-dev \
+            && rm -rf /var/lib/apt/lists/*
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/cargo/registry
+            /usr/local/cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build
+        run: cargo build
+        env:
+          LLVM_SYS_191_PREFIX: /usr/lib/llvm-19
+
+      - name: Run tests
+        run: bash run_tests.sh
+        env:
+          LLVM_SYS_191_PREFIX: /usr/lib/llvm-19
