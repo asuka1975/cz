@@ -206,20 +206,19 @@ impl Parser {
     fn parse_expression(&mut self) -> Result<Expr, String> {
         // Check for assignment: identifier = expr
         // We look ahead: if current is Identifier and next is '='  (not '==')
-        if let TokenKind::Identifier(_) = &self.peek().kind {
-            if self.pos + 1 < self.tokens.len() {
-                if let TokenKind::Eq = &self.tokens[self.pos + 1].kind {
-                    // This is an assignment
-                    let (name, line) = self.expect_identifier()?;
-                    self.expect(&TokenKind::Eq)?;
-                    let value = self.parse_expression()?;
-                    return Ok(Expr::Assign {
-                        name,
-                        value: Box::new(value),
-                        line,
-                    });
-                }
-            }
+        if let TokenKind::Identifier(_) = &self.peek().kind
+            && self.pos + 1 < self.tokens.len()
+            && let TokenKind::Eq = &self.tokens[self.pos + 1].kind
+        {
+            // This is an assignment
+            let (name, line) = self.expect_identifier()?;
+            self.expect(&TokenKind::Eq)?;
+            let value = self.parse_expression()?;
+            return Ok(Expr::Assign {
+                name,
+                value: Box::new(value),
+                line,
+            });
         }
         self.parse_or()
     }
