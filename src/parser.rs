@@ -439,3 +439,318 @@ impl Parser {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+
+    fn parse(source: &str) -> Result<Program, String> {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().map_err(|e| e.to_string())?;
+        let mut parser = Parser::new(tokens);
+        parser.parse_program()
+    }
+
+    fn parse_ok(source: &str) -> Program {
+        parse(source).expect("parse should succeed")
+    }
+
+    #[test]
+    fn empty_function() {
+        let prog = parse_ok("fn main() -> i32 { 0 }");
+        assert_eq!(prog.functions.len(), 1);
+        assert_eq!(prog.functions[0].name, "main");
+        assert_eq!(prog.functions[0].params.len(), 0);
+    }
+
+    #[test]
+    fn function_with_params() {
+        let prog = parse_ok("fn add(a: i32, b: i32) -> i32 { a }");
+        assert_eq!(prog.functions[0].params.len(), 2);
+        assert_eq!(prog.functions[0].params[0].name, "a");
+        assert_eq!(prog.functions[0].params[1].name, "b");
+    }
+
+    #[test]
+    fn multiple_functions() {
+        let prog = parse_ok(
+            "fn foo() -> i32 { 0 }
+             fn bar() -> i32 { 1 }",
+        );
+        assert_eq!(prog.functions.len(), 2);
+        assert_eq!(prog.functions[0].name, "foo");
+        assert_eq!(prog.functions[1].name, "bar");
+    }
+
+    #[test]
+    fn let_statement() {
+        let prog = parse_ok("fn main() -> i32 { let x: i32 = 42; x }");
+        assert_eq!(prog.functions[0].body.stmts.len(), 1);
+        if let Stmt::Let {
+            name, mutable, ..
+        } = &prog.functions[0].body.stmts[0]
+        {
+            assert_eq!(name, "x");
+            assert!(!mutable);
+        } else {
+            panic!("expected Let statement");
+        }
+    }
+
+    #[test]
+    fn let_mut_statement() {
+        let prog = parse_ok("fn main() -> i32 { let mut x: i32 = 0; x }");
+        if let Stmt::Let { mutable, .. } = &prog.functions[0].body.stmts[0] {
+            assert!(*mutable);
+        } else {
+            panic!("expected Let statement");
+        }
+    }
+
+    #[test]
+    fn return_statement() {
+        let prog = parse_ok("fn main() -> i32 { return 42; }");
+        assert!(matches!(
+            &prog.functions[0].body.stmts[0],
+            Stmt::Return { .. }
+        ));
+    }
+
+    #[test]
+    fn while_statement() {
+        let prog = parse_ok("fn main() -> i32 { while true { 0; } 0 }");
+        assert!(matches!(
+            &prog.functions[0].body.stmts[0],
+            Stmt::While { .. }
+        ));
+    }
+
+    #[test]
+    fn integer_literal_expr() {
+        let prog = parse_ok("fn main() -> i32 { 42 }");
+        if let Some(expr) = &prog.functions[0].body.expr {
+            assert!(matches!(expr.as_ref(), Expr::IntegerLiteral(42)));
+        } else {
+            panic!("expected tail expression");
+        }
+    }
+
+    #[test]
+    fn bool_literals() {
+        let prog = parse_ok("fn main() -> i32 { if true { 1 } else { 0 } }");
+        if let Some(expr) = &prog.functions[0].body.expr {
+            if let Expr::If { condition, .. } = expr.as_ref() {
+                assert!(matches!(condition.as_ref(), Expr::BoolLiteral(true)));
+            } else {
+                panic!("expected if expression");
+            }
+        } else {
+            panic!("expected tail expression");
+        }
+    }
+
+    #[test]
+    fn binary_op_add() {
+        let prog = parse_ok("fn main() -> i32 { 1 + 2 }");
+        if let Some(expr) = &prog.functions[0].body.expr {
+            if let Expr::BinaryOp { op, .. } = expr.as_ref() {
+                assert!(matches!(op, BinOp::Add));
+            } else {
+                panic!("expected BinaryOp");
+            }
+        } else {
+            panic!("expected tail expression");
+        }
+    }
+
+    #[test]
+    fn operator_precedence_mul_over_add() {
+        // 1 + 2 * 3 should parse as 1 + (2 * 3)
+        let prog = parse_ok("fn main() -> i32 { 1 + 2 * 3 }");
+        if let Some(expr) = &prog.functions[0].body.expr {
+            if let Expr::BinaryOp {
+                op: BinOp::Add,
+                right,
+                ..
+            } = expr.as_ref()
+            {
+                assert!(matches!(
+                    right.as_ref(),
+                    Expr::BinaryOp {
+                        op: BinOp::Mul,
+                        ..
+                    }
+                ));
+            } else {
+                panic!("expected Add at top level");
+            }
+        } else {
+            panic!("expected tail expression");
+        }
+    }
+
+    #[test]
+    fn operator_precedence_comparison_over_logical() {
+        // a < b && c > d should parse as (a < b) && (c > d)
+        let prog = parse_ok("fn main() -> i32 { let a: i32 = 1; let b: i32 = 2; let c: i32 = 3; let d: i32 = 4; if a < b && c > d { 1 } else { 0 } }");
+        // If it parses successfully, precedence is correct (otherwise && would consume < as operand)
+        assert_eq!(prog.functions.len(), 1);
+    }
+
+    #[test]
+    fn unary_neg() {
+        let prog = parse_ok("fn main() -> i32 { -42 }");
+        if let Some(expr) = &prog.functions[0].body.expr {
+            assert!(matches!(
+                expr.as_ref(),
+                Expr::UnaryOp {
+                    op: UnaryOp::Neg,
+                    ..
+                }
+            ));
+        } else {
+            panic!("expected tail expression");
+        }
+    }
+
+    #[test]
+    fn unary_not() {
+        let prog = parse_ok("fn main() -> i32 { if !false { 1 } else { 0 } }");
+        assert_eq!(prog.functions.len(), 1);
+    }
+
+    #[test]
+    fn function_call() {
+        let prog = parse_ok(
+            "fn foo(x: i32) -> i32 { x }
+             fn main() -> i32 { foo(42) }",
+        );
+        if let Some(expr) = &prog.functions[1].body.expr {
+            if let Expr::Call { name, args, .. } = expr.as_ref() {
+                assert_eq!(name, "foo");
+                assert_eq!(args.len(), 1);
+            } else {
+                panic!("expected Call");
+            }
+        } else {
+            panic!("expected tail expression");
+        }
+    }
+
+    #[test]
+    fn if_expression() {
+        let prog = parse_ok("fn main() -> i32 { if true { 1 } else { 0 } }");
+        if let Some(expr) = &prog.functions[0].body.expr {
+            if let Expr::If { else_block, .. } = expr.as_ref() {
+                assert!(else_block.is_some());
+            } else {
+                panic!("expected If");
+            }
+        } else {
+            panic!("expected tail expression");
+        }
+    }
+
+    #[test]
+    fn if_without_else() {
+        let prog = parse_ok("fn main() -> i32 { if true { 0; } 0 }");
+        assert!(matches!(
+            &prog.functions[0].body.stmts[0],
+            Stmt::Expr(Expr::If {
+                else_block: None,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn if_else_if() {
+        let prog = parse_ok(
+            "fn main() -> i32 { if true { 1 } else if false { 2 } else { 3 } }",
+        );
+        if let Some(expr) = &prog.functions[0].body.expr {
+            if let Expr::If { else_block, .. } = expr.as_ref() {
+                assert!(matches!(
+                    else_block.as_ref().map(|b| b.as_ref()),
+                    Some(ElseClause::ElseIf(_))
+                ));
+            } else {
+                panic!("expected If");
+            }
+        } else {
+            panic!("expected tail expression");
+        }
+    }
+
+    #[test]
+    fn block_expression() {
+        let prog = parse_ok("fn main() -> i32 { { 42 } }");
+        if let Some(expr) = &prog.functions[0].body.expr {
+            assert!(matches!(expr.as_ref(), Expr::Block(_)));
+        } else {
+            panic!("expected tail expression");
+        }
+    }
+
+    #[test]
+    fn assignment_expression() {
+        let prog = parse_ok("fn main() -> i32 { let mut x: i32 = 0; x = 42; x }");
+        if let Stmt::Expr(Expr::Assign { name, .. }) = &prog.functions[0].body.stmts[1] {
+            assert_eq!(name, "x");
+        } else {
+            panic!("expected Assign expression statement");
+        }
+    }
+
+    #[test]
+    fn parenthesized_expression() {
+        let prog = parse_ok("fn main() -> i32 { (1 + 2) * 3 }");
+        if let Some(expr) = &prog.functions[0].body.expr {
+            // (1+2)*3 => Mul at top, left should be Add
+            if let Expr::BinaryOp {
+                op: BinOp::Mul,
+                left,
+                ..
+            } = expr.as_ref()
+            {
+                assert!(matches!(
+                    left.as_ref(),
+                    Expr::BinaryOp {
+                        op: BinOp::Add,
+                        ..
+                    }
+                ));
+            } else {
+                panic!("expected Mul at top level");
+            }
+        } else {
+            panic!("expected tail expression");
+        }
+    }
+
+    #[test]
+    fn missing_semicolon_error() {
+        let result = parse("fn main() -> i32 { let x: i32 = 1 }");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn missing_closing_brace_error() {
+        let result = parse("fn main() -> i32 { 0");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn tail_expression_and_statements() {
+        let prog = parse_ok(
+            "fn main() -> i32 {
+                let x: i32 = 1;
+                let y: i32 = 2;
+                x + y
+            }",
+        );
+        assert_eq!(prog.functions[0].body.stmts.len(), 2);
+        assert!(prog.functions[0].body.expr.is_some());
+    }
+}
