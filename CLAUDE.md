@@ -65,6 +65,20 @@ Cz コンパイラの開発は以下の **3フェーズ** を厳密に順守し�
 - `EXPECT: link-error` - コンパイル (LLVM IR 生成) は成功するがリンクエラーになることを期待
 - `EXPECT: runtime-error` - コンパイルは成功するがランタイムエラーになることを期待
 
+## Definition of Done
+
+実装の完了判定には以下の **すべて** を満たすことを必須とする。
+すべてのコマンドは **Docker コンテナ上で実行すること**（ホスト環境では LLVM 等の依存が揃わないため）。
+
+```bash
+# コンテナ実行例
+docker run --rm -v $(pwd):/workspace -w /workspace -e LLVM_SYS_191_PREFIX=/usr/lib/llvm-19 czc-dev <command>
+```
+
+1. **Lint チェックが通ること** — `cargo fmt --check` および `cargo clippy -- -D warnings` がエラー・警告なしで通ること
+2. **ユニットテストが通ること** — `cargo test` が全件パスすること
+3. **統合テストが通ること** — `bash run_tests.sh` が全件パスすること
+
 ## Rules
 
 - 実装コードを書く前に必ず仕様ドキュメントとテストケースが存在すること

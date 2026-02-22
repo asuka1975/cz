@@ -205,3 +205,231 @@ impl Lexer {
         Token::new(kind, line, column)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tokenize(source: &str) -> Vec<TokenKind> {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        tokens.into_iter().map(|t| t.kind).collect()
+    }
+
+    #[test]
+    fn integer_literal() {
+        assert_eq!(
+            tokenize("42"),
+            vec![TokenKind::IntegerLiteral(42), TokenKind::Eof]
+        );
+    }
+
+    #[test]
+    fn multiple_integers() {
+        assert_eq!(
+            tokenize("1 23 456"),
+            vec![
+                TokenKind::IntegerLiteral(1),
+                TokenKind::IntegerLiteral(23),
+                TokenKind::IntegerLiteral(456),
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn keywords() {
+        assert_eq!(
+            tokenize("fn let mut return if else while true false i32"),
+            vec![
+                TokenKind::Fn,
+                TokenKind::Let,
+                TokenKind::Mut,
+                TokenKind::Return,
+                TokenKind::If,
+                TokenKind::Else,
+                TokenKind::While,
+                TokenKind::True,
+                TokenKind::False,
+                TokenKind::I32,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn identifiers() {
+        assert_eq!(
+            tokenize("foo bar _x abc123"),
+            vec![
+                TokenKind::Identifier("foo".into()),
+                TokenKind::Identifier("bar".into()),
+                TokenKind::Identifier("_x".into()),
+                TokenKind::Identifier("abc123".into()),
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn arithmetic_operators() {
+        assert_eq!(
+            tokenize("+ - * / %"),
+            vec![
+                TokenKind::Plus,
+                TokenKind::Minus,
+                TokenKind::Star,
+                TokenKind::Slash,
+                TokenKind::Percent,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn comparison_operators() {
+        assert_eq!(
+            tokenize("== != < > <= >="),
+            vec![
+                TokenKind::EqEq,
+                TokenKind::NotEq,
+                TokenKind::Lt,
+                TokenKind::Gt,
+                TokenKind::LtEq,
+                TokenKind::GtEq,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn logical_operators() {
+        assert_eq!(
+            tokenize("&& || !"),
+            vec![
+                TokenKind::AmpAmp,
+                TokenKind::PipePipe,
+                TokenKind::Bang,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn delimiters_and_punctuation() {
+        assert_eq!(
+            tokenize("( ) { } : ; , ->"),
+            vec![
+                TokenKind::LParen,
+                TokenKind::RParen,
+                TokenKind::LBrace,
+                TokenKind::RBrace,
+                TokenKind::Colon,
+                TokenKind::Semicolon,
+                TokenKind::Comma,
+                TokenKind::Arrow,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn assignment_vs_equality() {
+        assert_eq!(
+            tokenize("= =="),
+            vec![TokenKind::Eq, TokenKind::EqEq, TokenKind::Eof]
+        );
+    }
+
+    #[test]
+    fn arrow_vs_minus() {
+        assert_eq!(
+            tokenize("- ->"),
+            vec![TokenKind::Minus, TokenKind::Arrow, TokenKind::Eof]
+        );
+    }
+
+    #[test]
+    fn line_comment() {
+        assert_eq!(
+            tokenize("42 // this is a comment\n7"),
+            vec![
+                TokenKind::IntegerLiteral(42),
+                TokenKind::IntegerLiteral(7),
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn comment_only() {
+        assert_eq!(tokenize("// nothing here"), vec![TokenKind::Eof]);
+    }
+
+    #[test]
+    fn line_column_tracking() {
+        let mut lexer = Lexer::new("fn main\n  42");
+        let tokens = lexer.tokenize().unwrap();
+        assert_eq!(tokens[0].line, 1);
+        assert_eq!(tokens[0].column, 1); // fn
+        assert_eq!(tokens[1].line, 1);
+        assert_eq!(tokens[1].column, 4); // main
+        assert_eq!(tokens[2].line, 2);
+        assert_eq!(tokens[2].column, 3); // 42
+    }
+
+    #[test]
+    fn unexpected_character() {
+        let mut lexer = Lexer::new("@");
+        let result = lexer.tokenize();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("予期しない文字"));
+    }
+
+    #[test]
+    fn single_ampersand_error() {
+        let mut lexer = Lexer::new("&");
+        let result = lexer.tokenize();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn single_pipe_error() {
+        let mut lexer = Lexer::new("|");
+        let result = lexer.tokenize();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn empty_source() {
+        assert_eq!(tokenize(""), vec![TokenKind::Eof]);
+    }
+
+    #[test]
+    fn whitespace_only() {
+        assert_eq!(tokenize("   \n\t  \n  "), vec![TokenKind::Eof]);
+    }
+
+    #[test]
+    fn function_signature() {
+        assert_eq!(
+            tokenize("fn add(a: i32, b: i32) -> i32"),
+            vec![
+                TokenKind::Fn,
+                TokenKind::Identifier("add".into()),
+                TokenKind::LParen,
+                TokenKind::Identifier("a".into()),
+                TokenKind::Colon,
+                TokenKind::I32,
+                TokenKind::Comma,
+                TokenKind::Identifier("b".into()),
+                TokenKind::Colon,
+                TokenKind::I32,
+                TokenKind::RParen,
+                TokenKind::Arrow,
+                TokenKind::I32,
+                TokenKind::Eof,
+            ]
+        );
+    }
+}

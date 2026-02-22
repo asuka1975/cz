@@ -329,3 +329,168 @@ impl SemanticAnalyzer {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+
+    fn analyze(source: &str) -> Result<(), Vec<String>> {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse_program().unwrap();
+        let mut analyzer = SemanticAnalyzer::new();
+        analyzer.analyze(&program)
+    }
+
+    fn analyze_errors(source: &str) -> Vec<String> {
+        analyze(source).unwrap_err()
+    }
+
+    #[test]
+    fn valid_simple_function() {
+        assert!(analyze("fn main() -> i32 { 0 }").is_ok());
+    }
+
+    #[test]
+    fn valid_function_with_params() {
+        assert!(analyze("fn add(a: i32, b: i32) -> i32 { a + b }").is_ok());
+    }
+
+    #[test]
+    fn valid_let_and_use() {
+        assert!(analyze("fn main() -> i32 { let x: i32 = 42; x }").is_ok());
+    }
+
+    #[test]
+    fn valid_mutable_reassign() {
+        assert!(analyze("fn main() -> i32 { let mut x: i32 = 0; x = 42; x }").is_ok());
+    }
+
+    #[test]
+    fn valid_forward_reference() {
+        assert!(
+            analyze(
+                "fn main() -> i32 { foo() }
+             fn foo() -> i32 { 42 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_print_i32_builtin() {
+        assert!(analyze("fn main() -> i32 { print_i32(42) }").is_ok());
+    }
+
+    #[test]
+    fn undefined_variable() {
+        let errors = analyze_errors("fn main() -> i32 { x }");
+        assert!(errors.iter().any(|e| e.contains("未定義の変数 'x'")));
+    }
+
+    #[test]
+    fn undefined_function() {
+        let errors = analyze_errors("fn main() -> i32 { foo() }");
+        assert!(errors.iter().any(|e| e.contains("未定義の関数 'foo'")));
+    }
+
+    #[test]
+    fn argument_count_mismatch() {
+        let errors = analyze_errors(
+            "fn foo(a: i32) -> i32 { a }
+             fn main() -> i32 { foo(1, 2) }",
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("1 個の引数を取りますが 2 個渡されました"))
+        );
+    }
+
+    #[test]
+    fn immutable_reassign() {
+        let errors = analyze_errors("fn main() -> i32 { let x: i32 = 0; x = 1; x }");
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("イミュータブル変数 'x' への再代入"))
+        );
+    }
+
+    #[test]
+    fn duplicate_function() {
+        let errors = analyze_errors(
+            "fn foo() -> i32 { 0 }
+             fn foo() -> i32 { 1 }
+             fn main() -> i32 { 0 }",
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("関数 'foo' は既に定義されています"))
+        );
+    }
+
+    #[test]
+    fn variable_scope_inner() {
+        // Variable defined in inner scope should not be visible in outer scope
+        let errors = analyze_errors(
+            "fn main() -> i32 {
+                if true { let y: i32 = 1; y; }
+                y
+            }",
+        );
+        assert!(errors.iter().any(|e| e.contains("未定義の変数 'y'")));
+    }
+
+    #[test]
+    fn missing_tail_expression() {
+        let errors = analyze_errors("fn main() -> i32 { let x: i32 = 0; }");
+        assert!(errors.iter().any(|e| e.contains("末尾式がありません")));
+    }
+
+    #[test]
+    fn if_value_requires_else() {
+        let errors = analyze_errors("fn main() -> i32 { if true { 1 } }");
+        assert!(errors.iter().any(|e| e.contains("else 分岐が必要です")));
+    }
+
+    #[test]
+    fn valid_while_loop() {
+        assert!(
+            analyze(
+                "fn main() -> i32 {
+                let mut x: i32 = 0;
+                while x < 10 {
+                    x = x + 1;
+                }
+                x
+            }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_return_statement() {
+        assert!(analyze("fn main() -> i32 { return 42; }").is_ok());
+    }
+
+    #[test]
+    fn valid_if_else_as_value() {
+        assert!(analyze("fn main() -> i32 { if true { 1 } else { 0 } }").is_ok());
+    }
+
+    #[test]
+    fn duplicate_var_in_same_scope() {
+        let errors = analyze_errors("fn main() -> i32 { let x: i32 = 1; let x: i32 = 2; x }");
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("変数 'x' は同一スコープ内で既に宣言されています"))
+        );
+    }
+}
