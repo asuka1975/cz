@@ -1,6 +1,8 @@
 // TEST: 変数のスコープ
 // EXPECT: success
 // DESCRIPTION: ブロックスコープが正しく機能することを検証する
+// EXPECTED_EXIT_CODE: 3
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     let x: i32 = 1;

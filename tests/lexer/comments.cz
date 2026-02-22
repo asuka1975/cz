@@ -1,6 +1,8 @@
 // TEST: コメントの字句解析
 // EXPECT: success
 // DESCRIPTION: 行コメントが正しく無視されることを検証する
+// EXPECTED_EXIT_CODE: 42
+// EXPECTED_STDOUT:
 
 // トップレベルのコメント
 fn main() -> i32 {

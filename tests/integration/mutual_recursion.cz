@@ -1,6 +1,8 @@
 // TEST: 相互再帰
 // EXPECT: success
 // DESCRIPTION: 関数同士の相互再帰呼び出しが正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 1\n1\n
 
 fn is_even(n: i32) -> i32 {
     if n == 0 {

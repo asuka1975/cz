@@ -1,6 +1,8 @@
 // TEST: ミュータブル変数への再代入
 // EXPECT: success
 // DESCRIPTION: let mutで宣言したミュータブル変数への再代入が成功することを検証する
+// EXPECTED_EXIT_CODE: 20
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     let mut x: i32 = 10;

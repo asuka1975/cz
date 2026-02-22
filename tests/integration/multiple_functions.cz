@@ -1,6 +1,8 @@
 // TEST: 複数関数の定義と呼び出し
 // EXPECT: success
 // DESCRIPTION: 複数の関数定義と相互呼び出しが正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 25\n
 
 fn square(x: i32) -> i32 {
     x * x

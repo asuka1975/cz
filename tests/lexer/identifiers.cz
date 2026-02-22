@@ -1,6 +1,8 @@
 // TEST: 識別子の字句解析
 // EXPECT: success
 // DESCRIPTION: 各種識別子が正しくトークン化されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT:
 
 fn _private() -> i32 {
     0

@@ -1,6 +1,8 @@
 // TEST: 再帰によるフィボナッチ数計算
 // EXPECT: success
 // DESCRIPTION: 再帰関数とif式を使ったフィボナッチ数計算が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 55\n
 
 fn fibonacci(n: i32) -> i32 {
     if n <= 1 {

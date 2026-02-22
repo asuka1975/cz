@@ -1,6 +1,8 @@
 // TEST: 末尾式による暗黙の戻り値
 // EXPECT: success
 // DESCRIPTION: ブロック末尾のセミコロンなし式が暗黙の戻り値となることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 10\n5\n15\n
 
 fn double(x: i32) -> i32 {
     x * 2

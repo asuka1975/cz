@@ -1,6 +1,8 @@
 // TEST: whileループによる合計計算
 // EXPECT: success
 // DESCRIPTION: whileループとミュータブル変数を使った合計計算が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 55
+// EXPECTED_STDOUT: 55\n
 
 fn main() -> i32 {
     let mut sum: i32 = 0;

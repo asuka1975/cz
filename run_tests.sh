@@ -27,18 +27,44 @@ run_test() {
                 echo "  Output: $compile_output"
                 FAIL=$((FAIL + 1))
             else
-                # Try to run - main's return value is the exit code, so any
-                # exit code is valid. Only signal-killed (exit >= 128) is a failure.
+                # Run the compiled binary
                 run_output=$("$output_bin" 2>&1)
                 run_exit=$?
+
                 if [ $run_exit -ge 128 ]; then
                     echo "FAIL: $file ($test_name)"
                     echo "  Expected: success, Got: killed by signal (exit $run_exit)"
                     echo "  Output: $run_output"
                     FAIL=$((FAIL + 1))
                 else
-                    echo "PASS: $file ($test_name)"
-                    PASS=$((PASS + 1))
+                    # Verify exit code and stdout
+                    local expected_exit=$(grep '// EXPECTED_EXIT_CODE:' "$file" | head -1 | sed 's/.*EXPECTED_EXIT_CODE: *//')
+                    local expected_stdout_raw=$(grep '// EXPECTED_STDOUT:' "$file" | head -1 | sed 's/.*EXPECTED_STDOUT: *//')
+                    # Convert \n escapes to actual newlines
+                    local expected_stdout
+                    expected_stdout=$(printf '%b' "$expected_stdout_raw")
+
+                    local failed=0
+                    local fail_details=""
+
+                    if [ -n "$expected_exit" ] && [ "$run_exit" != "$expected_exit" ]; then
+                        failed=1
+                        fail_details="$fail_details\n  Exit code: expected $expected_exit, got $run_exit"
+                    fi
+
+                    if [ -n "$expected_stdout_raw" ] && [ "$run_output" != "$expected_stdout" ]; then
+                        failed=1
+                        fail_details="$fail_details\n  Stdout: expected $(echo "$expected_stdout" | head -c 80), got $(echo "$run_output" | head -c 80)"
+                    fi
+
+                    if [ $failed -eq 1 ]; then
+                        echo "FAIL: $file ($test_name)"
+                        printf "%b\n" "$fail_details"
+                        FAIL=$((FAIL + 1))
+                    else
+                        echo "PASS: $file ($test_name)"
+                        PASS=$((PASS + 1))
+                    fi
                 fi
             fi
             ;;
