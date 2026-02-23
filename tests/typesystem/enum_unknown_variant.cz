@@ -1,0 +1,14 @@
+// TEST: 列挙型の存在しないバリアントエラー
+// EXPECT: compile-error
+// DESCRIPTION: 列挙型に存在しないバリアントを使用するとコンパイルエラーになることを検証する
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+fn main() -> i32 {
+    let c = Color::Yellow;
+    0
+}

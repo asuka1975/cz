@@ -1,0 +1,20 @@
+// TEST: タプル分解のmatch式
+// EXPECT: success
+// DESCRIPTION: タプルのパターンマッチによる分解が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 1\n2\n3\n
+
+fn classify_pair(pair: (i32, bool)) -> i32 {
+    match pair {
+        (0, _) => 1,
+        (_, true) => 2,
+        (_, false) => 3,
+    }
+}
+
+fn main() -> i32 {
+    print_i32(classify_pair((0, true)));
+    print_i32(classify_pair((5, true)));
+    print_i32(classify_pair((5, false)));
+    0
+}

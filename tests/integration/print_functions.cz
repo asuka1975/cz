@@ -1,0 +1,15 @@
+// TEST: 各種print組み込み関数
+// EXPECT: success
+// DESCRIPTION: print_i8, print_i16, print_i32, print_i64, print_f64, print_boolの各組み込み関数が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n1000\n99999\n100000\ntrue\nfalse\n
+
+fn main() -> i32 {
+    print_i8(42i8);
+    print_i16(1000i16);
+    print_i32(99999);
+    print_i64(100000i64);
+    print_bool(true);
+    print_bool(false);
+    0
+}

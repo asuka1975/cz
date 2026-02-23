@@ -1,0 +1,23 @@
+// TEST: 整数型間のキャスト
+// EXPECT: success
+// DESCRIPTION: 整数型間の拡大・縮小キャストが正しいコードを生成することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n42\n0\n
+
+fn main() -> i32 {
+    // 拡大キャスト: i32 -> i64
+    let a: i32 = 42;
+    let b: i64 = a as i64;
+    print_i32(b as i32);
+
+    // i8 -> i32
+    let c: i8 = 42i8;
+    print_i32(c as i32);
+
+    // 縮小キャスト: i32 -> i8 (256 -> 0)
+    let d: i32 = 256;
+    let e: i8 = d as i8;
+    print_i32(e as i32);
+
+    0
+}

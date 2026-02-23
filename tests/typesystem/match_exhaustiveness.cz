@@ -1,0 +1,15 @@
+// TEST: match式の網羅性チェック失敗
+// EXPECT: compile-error
+// DESCRIPTION: 全パターンをカバーしないmatch式がコンパイルエラーになることを検証する
+
+enum Option {
+    Some(i32),
+    None,
+}
+
+fn main() -> i32 {
+    let opt = Option::Some(42);
+    match opt {
+        Option::Some(v) => v,
+    }
+}

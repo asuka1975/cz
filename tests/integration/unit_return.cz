@@ -1,0 +1,19 @@
+// TEST: ユニット型を返す関数
+// EXPECT: success
+// DESCRIPTION: 戻り値型を省略した関数と -> () を明示した関数が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 1\n2\n
+
+fn print_value(x: i32) {
+    print_i32(x);
+}
+
+fn print_value2(x: i32) -> () {
+    print_i32(x);
+}
+
+fn main() -> i32 {
+    print_value(1);
+    print_value2(2);
+    0
+}

@@ -1,0 +1,17 @@
+// TEST: 構造体定義と構築
+// EXPECT: success
+// DESCRIPTION: struct定義、フィールド初期化、フィールドアクセスのパースが正しく行われることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 3\n
+
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+fn main() -> i32 {
+    let p = Point { x: 1, y: 2 };
+    let sum = p.x + p.y;
+    print_i32(sum);
+    0
+}

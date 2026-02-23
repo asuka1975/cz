@@ -1,0 +1,26 @@
+// TEST: フィールドアクセスとタプルインデックス
+// EXPECT: success
+// DESCRIPTION: 構造体フィールドアクセス（ネスト含む）とタプルインデックスアクセスのパースが正しく行われることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 1\n2\n10\n
+
+struct Point { x: i32, y: i32 }
+
+struct Line {
+    start: Point,
+    end: Point,
+}
+
+fn main() -> i32 {
+    let line = Line {
+        start: Point { x: 1, y: 2 },
+        end: Point { x: 3, y: 4 },
+    };
+    print_i32(line.start.x);
+    print_i32(line.start.y);
+
+    let t = (10, 20, 30);
+    print_i32(t.0);
+
+    0
+}

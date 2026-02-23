@@ -1,0 +1,17 @@
+// TEST: 構造体の関数引数と戻り値
+// EXPECT: success
+// DESCRIPTION: 構造体を関数の引数として渡し、構造体を返す関数が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 25\n
+
+struct Point { x: i32, y: i32 }
+
+fn distance_sq(p: Point) -> i32 {
+    p.x * p.x + p.y * p.y
+}
+
+fn main() -> i32 {
+    let p = Point { x: 3, y: 4 };
+    print_i32(distance_sq(p));
+    0
+}

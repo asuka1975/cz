@@ -1,0 +1,17 @@
+// TEST: asキャスト
+// EXPECT: success
+// DESCRIPTION: as演算子による各種型キャスト（整数間、整数↔浮動小数点、整数↔bool）が正しく型検査を通ることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 0\n
+
+fn main() -> i32 {
+    let a: i32 = 42;
+    let b: i64 = a as i64;
+    let c: i8 = a as i8;
+    let d: f64 = a as f64;
+    let e: i32 = 3.14 as i32;
+    let f: bool = 1 as bool;
+    let g: i32 = true as i32;
+    let h: f64 = false as f64;
+    0
+}

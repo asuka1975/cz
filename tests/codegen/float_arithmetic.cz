@@ -1,0 +1,15 @@
+// TEST: 浮動小数点数の算術演算
+// EXPECT: success
+// DESCRIPTION: f64型の加減乗除が正しいコードを生成することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 5\n1\n6\n1\n
+
+fn main() -> i32 {
+    let a = 3.0;
+    let b = 2.0;
+    print_i32((a + b) as i32);
+    print_i32((a - b) as i32);
+    print_i32((a * b) as i32);
+    print_i32((a / b) as i32);
+    0
+}

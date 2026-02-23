@@ -1,0 +1,22 @@
+// TEST: 複合的な型推論
+// EXPECT: success
+// DESCRIPTION: 関数呼び出し、構造体、タプルの型推論が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 15\n10\n20\n
+
+struct Point { x: i32, y: i32 }
+
+fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+fn main() -> i32 {
+    let result = add(5, 10);
+    print_i32(result);
+
+    let p = Point { x: 10, y: 20 };
+    print_i32(p.x);
+    print_i32(p.y);
+
+    0
+}

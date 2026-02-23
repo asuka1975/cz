@@ -1,0 +1,12 @@
+// TEST: asキャスト式
+// EXPECT: success
+// DESCRIPTION: as演算子による型キャストのパースが正しく行われることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n
+
+fn main() -> i32 {
+    let x: i64 = 42i64;
+    let y = x as i32;
+    print_i32(y);
+    0
+}

@@ -1,0 +1,15 @@
+// TEST: bool型のmatch網羅性
+// EXPECT: success
+// DESCRIPTION: bool型のmatch式でtrue/falseの両方をカバーすると網羅的と判定されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 1\n
+
+fn main() -> i32 {
+    let flag = true;
+    let result = match flag {
+        true => 1,
+        false => 0,
+    };
+    print_i32(result);
+    0
+}

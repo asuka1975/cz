@@ -1,0 +1,20 @@
+// TEST: enum構築とmatchコード生成
+// EXPECT: success
+// DESCRIPTION: 列挙型の構築とmatch式による分解のコード生成が正しいことを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n
+
+enum Option {
+    Some(i32),
+    None,
+}
+
+fn main() -> i32 {
+    let opt = Option::Some(42);
+    let val = match opt {
+        Option::Some(v) => v,
+        Option::None => 0,
+    };
+    print_i32(val);
+    0
+}

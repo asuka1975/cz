@@ -1,0 +1,8 @@
+// TEST: ループ外のcontinue
+// EXPECT: compile-error
+// DESCRIPTION: continueをループの外で使用するとコンパイルエラーになることを検証する
+
+fn main() -> i32 {
+    continue;
+    0
+}

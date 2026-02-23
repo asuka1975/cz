@@ -1,0 +1,12 @@
+// TEST: i32とboolの暗黙変換禁止
+// EXPECT: compile-error
+// DESCRIPTION: i32値をbool型が要求されるif条件に使用するとコンパイルエラーになることを検証する
+
+fn main() -> i32 {
+    let x: i32 = 1;
+    if x {
+        0
+    } else {
+        1
+    }
+}

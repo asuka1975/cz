@@ -1,0 +1,21 @@
+// TEST: 負の整数リテラルのmatchパターン
+// EXPECT: success
+// DESCRIPTION: 負の整数リテラルパターンと負の範囲パターンが正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: -1\n0\n1\n
+
+fn sign(x: i32) -> i32 {
+    match x {
+        -100..=-1 => -1,
+        0 => 0,
+        1..=100 => 1,
+        _ => 0,
+    }
+}
+
+fn main() -> i32 {
+    print_i32(sign(-5));
+    print_i32(sign(0));
+    print_i32(sign(42));
+    0
+}
