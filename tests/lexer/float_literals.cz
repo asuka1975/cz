@@ -1,0 +1,12 @@
+// TEST: 浮動小数点リテラル
+// EXPECT: success
+// DESCRIPTION: 浮動小数点リテラル（サフィックスなし・f32・f64）が正しくトークン化されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 3\n
+
+fn main() -> i32 {
+    let a = 3.14;
+    let b = 1.0f32;
+    let c = 2.71f64;
+    3
+}

@@ -1,0 +1,10 @@
+// TEST: 列挙型の重複定義エラー
+// EXPECT: compile-error
+// DESCRIPTION: 同名の列挙型を複数定義するとコンパイルエラーになることを検証する
+
+enum Color { Red, Green, Blue }
+enum Color { Cyan, Magenta, Yellow }
+
+fn main() -> i32 {
+    0
+}

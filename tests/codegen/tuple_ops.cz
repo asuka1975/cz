@@ -1,0 +1,13 @@
+// TEST: タプル操作
+// EXPECT: success
+// DESCRIPTION: タプルの構築とインデックスアクセスのコード生成が正しいことを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 10\n20\n30\n
+
+fn main() -> i32 {
+    let t = (10, 20, 30);
+    print_i32(t.0);
+    print_i32(t.1);
+    print_i32(t.2);
+    0
+}

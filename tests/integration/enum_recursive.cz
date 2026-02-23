@@ -1,0 +1,23 @@
+// TEST: enum活用（Option的パターン）
+// EXPECT: success
+// DESCRIPTION: Optionパターンのenumを関数間で受け渡し、matchで処理する統合テスト
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 10\n0\n
+
+enum Option {
+    Some(i32),
+    None,
+}
+
+fn unwrap_or(opt: Option, default: i32) -> i32 {
+    match opt {
+        Option::Some(v) => v,
+        Option::None => default,
+    }
+}
+
+fn main() -> i32 {
+    print_i32(unwrap_or(Option::Some(10), 0));
+    print_i32(unwrap_or(Option::None, 0));
+    0
+}

@@ -1,0 +1,13 @@
+// TEST: 型推論
+// EXPECT: success
+// DESCRIPTION: 型注釈を省略した場合にリテラルや式から正しく型が推論されることを検証する
+// EXPECTED_EXIT_CODE: 42
+// EXPECTED_STDOUT:
+
+fn main() -> i32 {
+    let x = 42;
+    let y = 3.14;
+    let flag = true;
+    let unit = ();
+    x
+}

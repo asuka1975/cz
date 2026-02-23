@@ -1,0 +1,14 @@
+// TEST: boolと数値型のキャスト
+// EXPECT: success
+// DESCRIPTION: bool↔i32のasキャストが正しいコードを生成することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 1\n0\n
+
+fn main() -> i32 {
+    // bool -> i32
+    let a = true as i32;
+    let b = false as i32;
+    print_i32(a);
+    print_i32(b);
+    0
+}

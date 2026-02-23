@@ -1,0 +1,21 @@
+// TEST: 各種整数型
+// EXPECT: success
+// DESCRIPTION: i8, i16, i64型の算術演算が正しく型検査を通ることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 0\n
+
+fn main() -> i32 {
+    let a: i8 = 10i8;
+    let b: i8 = 20i8;
+    let c: i8 = a + b;
+
+    let d: i16 = 100i16;
+    let e: i16 = 200i16;
+    let f: i16 = d + e;
+
+    let g: i64 = 1000i64;
+    let h: i64 = 2000i64;
+    let i: i64 = g + h;
+
+    0
+}

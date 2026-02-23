@@ -1,0 +1,10 @@
+// TEST: 構造体の重複定義エラー
+// EXPECT: compile-error
+// DESCRIPTION: 同名の構造体を複数定義するとコンパイルエラーになることを検証する
+
+struct Point { x: i32, y: i32 }
+struct Point { a: i32, b: i32 }
+
+fn main() -> i32 {
+    0
+}

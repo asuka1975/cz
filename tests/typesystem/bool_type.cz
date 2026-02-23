@@ -1,0 +1,12 @@
+// TEST: bool型の独立性
+// EXPECT: success
+// DESCRIPTION: boolが独立した型として機能し、条件式でboolが要求されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 1\n
+
+fn main() -> i32 {
+    let flag: bool = true;
+    let result = if flag { 1 } else { 0 };
+    print_i32(result);
+    0
+}

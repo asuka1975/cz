@@ -1,0 +1,14 @@
+// TEST: 構造体操作
+// EXPECT: success
+// DESCRIPTION: 構造体の構築とフィールドアクセスのコード生成が正しいことを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 3\n4\n
+
+struct Point { x: i32, y: i32 }
+
+fn main() -> i32 {
+    let p = Point { x: 3, y: 4 };
+    print_i32(p.x);
+    print_i32(p.y);
+    0
+}

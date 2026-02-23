@@ -1,0 +1,8 @@
+// TEST: ループ外のbreak
+// EXPECT: compile-error
+// DESCRIPTION: breakをループの外で使用するとコンパイルエラーになることを検証する
+
+fn main() -> i32 {
+    break;
+    0
+}

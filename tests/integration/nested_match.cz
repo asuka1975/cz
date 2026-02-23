@@ -1,0 +1,25 @@
+// TEST: ネストしたパターンマッチ
+// EXPECT: success
+// DESCRIPTION: タプル内にenum値を含むネストしたパターンマッチが正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n-1\n0\n
+
+enum Option {
+    Some(i32),
+    None,
+}
+
+fn process(pair: (Option, bool)) -> i32 {
+    match pair {
+        (Option::Some(v), true) => v,
+        (Option::Some(v), false) => -v,
+        (Option::None, _) => 0,
+    }
+}
+
+fn main() -> i32 {
+    print_i32(process((Option::Some(42), true)));
+    print_i32(process((Option::Some(1), false)));
+    print_i32(process((Option::None, true)));
+    0
+}

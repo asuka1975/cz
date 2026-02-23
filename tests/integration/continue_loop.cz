@@ -1,0 +1,20 @@
+// TEST: continueによるイテレーションスキップ
+// EXPECT: success
+// DESCRIPTION: continueで奇数をスキップし偶数のみ加算する処理が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 30\n
+
+fn main() -> i32 {
+    let mut i = 0;
+    let mut sum = 0;
+    while i < 10 {
+        i = i + 1;
+        if i % 2 != 0 {
+            continue;
+        }
+        sum = sum + i;
+    }
+    // 2 + 4 + 6 + 8 + 10 = 30
+    print_i32(sum);
+    0
+}

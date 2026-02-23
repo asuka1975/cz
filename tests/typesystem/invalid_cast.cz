@@ -1,0 +1,9 @@
+// TEST: 不正なキャスト
+// EXPECT: compile-error
+// DESCRIPTION: ユニット型からのキャストがコンパイルエラーになることを検証する
+
+fn main() -> i32 {
+    let x: () = ();
+    let y = x as i32;
+    0
+}

@@ -1,0 +1,17 @@
+// TEST: match式
+// EXPECT: success
+// DESCRIPTION: match式の各種パターン（リテラル、範囲、ワイルドカード、変数束縛）のパースが正しく行われることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 2\n
+
+fn main() -> i32 {
+    let x = 7;
+    let result = match x {
+        0 => 0,
+        1..=5 => 1,
+        6..=10 => 2,
+        n => n,
+    };
+    print_i32(result);
+    0
+}

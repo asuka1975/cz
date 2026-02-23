@@ -1,0 +1,24 @@
+// TEST: 構造体分解のmatch式
+// EXPECT: success
+// DESCRIPTION: 構造体のパターンマッチによる分解が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 0\n5\n3\n7\n
+
+struct Point { x: i32, y: i32 }
+
+fn classify(p: Point) -> i32 {
+    match p {
+        Point { x: 0, y: 0 } => 0,
+        Point { x: 0, y } => y,
+        Point { x, y: 0 } => x,
+        Point { x, y } => x + y,
+    }
+}
+
+fn main() -> i32 {
+    print_i32(classify(Point { x: 0, y: 0 }));
+    print_i32(classify(Point { x: 0, y: 5 }));
+    print_i32(classify(Point { x: 3, y: 0 }));
+    print_i32(classify(Point { x: 3, y: 4 }));
+    0
+}

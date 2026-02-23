@@ -1,0 +1,26 @@
+// TEST: enum型のmatch式
+// EXPECT: success
+// DESCRIPTION: 列挙型（ユニット・タプル・構造体バリアント）のmatch分解が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 36\n30\n0\n
+
+enum Shape {
+    Circle(i32),
+    Rect { w: i32, h: i32 },
+    None,
+}
+
+fn area(shape: Shape) -> i32 {
+    match shape {
+        Shape::Circle(r) => r * r,
+        Shape::Rect { w, h } => w * h,
+        Shape::None => 0,
+    }
+}
+
+fn main() -> i32 {
+    print_i32(area(Shape::Circle(6)));
+    print_i32(area(Shape::Rect { w: 5, h: 6 }));
+    print_i32(area(Shape::None));
+    0
+}

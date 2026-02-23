@@ -1,0 +1,18 @@
+// TEST: 浮動小数点型の演算
+// EXPECT: success
+// DESCRIPTION: f32, f64型の算術演算と比較演算が正しく型検査を通ることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 0\n
+
+fn main() -> i32 {
+    let a: f64 = 3.14;
+    let b: f64 = 2.0;
+    let c = a + b;
+    let d = a - b;
+    let e = a * b;
+    let f = a / b;
+    let g = a > b;
+    let h: f32 = 1.0f32;
+    let i: f32 = h + 2.0f32;
+    0
+}

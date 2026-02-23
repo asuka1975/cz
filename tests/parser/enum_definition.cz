@@ -1,0 +1,22 @@
+// TEST: 列挙型定義と構築
+// EXPECT: success
+// DESCRIPTION: enum定義（ユニット・タプル・構造体バリアント）と構築のパースが正しく行われることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n
+
+enum Value {
+    None,
+    Int(i32),
+    Pair { a: i32, b: i32 },
+}
+
+fn main() -> i32 {
+    let v = Value::Int(42);
+    let result = match v {
+        Value::None => 0,
+        Value::Int(x) => x,
+        Value::Pair { a, b } => a + b,
+    };
+    print_i32(result);
+    0
+}

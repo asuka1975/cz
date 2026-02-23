@@ -1,0 +1,10 @@
+// TEST: 浮動小数点型の剰余演算エラー
+// EXPECT: compile-error
+// DESCRIPTION: 浮動小数点型に対して%演算子を使用するとコンパイルエラーになることを検証する
+
+fn main() -> i32 {
+    let a = 3.14;
+    let b = 2.0;
+    let c = a % b;
+    0
+}

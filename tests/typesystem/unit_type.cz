@@ -1,0 +1,14 @@
+// TEST: ユニット型
+// EXPECT: success
+// DESCRIPTION: ユニット型 () が関数の戻り値型として正しく使用できることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n
+
+fn greet() {
+    print_i32(42);
+}
+
+fn main() -> i32 {
+    greet();
+    0
+}

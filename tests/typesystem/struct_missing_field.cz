@@ -1,0 +1,10 @@
+// TEST: 構造体フィールド不足エラー
+// EXPECT: compile-error
+// DESCRIPTION: 構造体の構築時にフィールドが不足しているとコンパイルエラーになることを検証する
+
+struct Point { x: i32, y: i32 }
+
+fn main() -> i32 {
+    let p = Point { x: 1 };
+    0
+}

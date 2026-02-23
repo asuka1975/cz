@@ -1,0 +1,22 @@
+// TEST: 整数のmatch式（範囲パターン含む）
+// EXPECT: success
+// DESCRIPTION: 整数値に対するmatch式がリテラル・範囲・ワイルドカードパターンで正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 0\n1\n2\n3\n
+
+fn classify(x: i32) -> i32 {
+    match x {
+        0 => 0,
+        1..=9 => 1,
+        10..=99 => 2,
+        _ => 3,
+    }
+}
+
+fn main() -> i32 {
+    print_i32(classify(0));
+    print_i32(classify(5));
+    print_i32(classify(42));
+    print_i32(classify(100));
+    0
+}
