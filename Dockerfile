@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
+RUN rustup component add clippy rustfmt
+
 ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
 
 WORKDIR /workspace

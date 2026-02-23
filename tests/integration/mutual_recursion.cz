@@ -2,9 +2,9 @@
 // EXPECT: success
 // DESCRIPTION: 関数同士の相互再帰呼び出しが正しく動作することを検証する
 // EXPECTED_EXIT_CODE: 0
-// EXPECTED_STDOUT: 1\n1\n
+// EXPECTED_STDOUT: true\ntrue\n
 
-fn is_even(n: i32) -> i32 {
+fn is_even(n: i32) -> bool {
     if n == 0 {
         true
     } else {
@@ -12,7 +12,7 @@ fn is_even(n: i32) -> i32 {
     }
 }
 
-fn is_odd(n: i32) -> i32 {
+fn is_odd(n: i32) -> bool {
     if n == 0 {
         false
     } else {
@@ -21,7 +21,7 @@ fn is_odd(n: i32) -> i32 {
 }
 
 fn main() -> i32 {
-    print_i32(is_even(4));   // 1 (true)
-    print_i32(is_odd(3));    // 1 (true)
+    print_bool(is_even(4));   // true
+    print_bool(is_odd(3));    // true
     0
 }
