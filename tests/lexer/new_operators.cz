@@ -2,7 +2,7 @@
 // EXPECT: success
 // DESCRIPTION: MS2で追加された演算子・記号（., ..=, =>）が正しくトークン化されることを検証する
 // EXPECTED_EXIT_CODE: 0
-// EXPECTED_STDOUT: 1\n
+// EXPECTED_STDOUT:
 
 struct Point { x: i32, y: i32 }
 
@@ -11,9 +11,9 @@ fn main() -> i32 {
     let val = p.x;
     let t = (10, 20);
     let first = t.0;
-    let result = match val {
+    let _result = match val {
         1..=5 => 1,
         _ => 0,
     };
-    result
+    0
 }

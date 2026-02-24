@@ -13,16 +13,41 @@ impl Parser {
 
     pub fn parse_program(&mut self) -> Result<Program, String> {
         let mut functions = Vec::new();
+        let mut structs = Vec::new();
+        let mut enums = Vec::new();
         while !self.check(&TokenKind::Eof) {
-            functions.push(self.parse_function_def()?);
+            if self.check(&TokenKind::Fn) {
+                functions.push(self.parse_function_def()?);
+            } else if self.check(&TokenKind::Struct) {
+                structs.push(self.parse_struct_def()?);
+            } else if self.check(&TokenKind::Enum) {
+                enums.push(self.parse_enum_def()?);
+            } else {
+                let tok = self.peek();
+                return Err(format!(
+                    "{}:{}: トップレベルで fn, struct, enum が期待されましたが {:?} が見つかりました",
+                    tok.line, tok.column, tok.kind
+                ));
+            }
         }
-        Ok(Program { functions })
+        Ok(Program {
+            functions,
+            structs,
+            enums,
+        })
     }
 
     // --- Helpers ---
 
     fn expr_ends_with_block(expr: &Expr) -> bool {
-        matches!(expr, Expr::If { .. } | Expr::Block(_) | Expr::Assign { .. })
+        matches!(
+            expr,
+            Expr::If { .. }
+                | Expr::Block(_)
+                | Expr::Assign { .. }
+                | Expr::While { .. }
+                | Expr::Match { .. }
+        )
     }
 
     fn peek(&self) -> &Token {
@@ -70,6 +95,93 @@ impl Parser {
         }
     }
 
+    // --- Struct/Enum Definitions ---
+
+    fn parse_struct_def(&mut self) -> Result<StructDef, String> {
+        let struct_tok = self.expect(&TokenKind::Struct)?;
+        let line = struct_tok.line;
+        let (name, _) = self.expect_identifier()?;
+        self.expect(&TokenKind::LBrace)?;
+        let mut fields = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+            let (field_name, _) = self.expect_identifier()?;
+            self.expect(&TokenKind::Colon)?;
+            let field_type = self.parse_type()?;
+            fields.push(FieldDef {
+                name: field_name,
+                field_type,
+            });
+            if !self.check(&TokenKind::RBrace) {
+                // Allow optional trailing comma
+                if self.check(&TokenKind::Comma) {
+                    self.advance();
+                }
+            }
+        }
+        self.expect(&TokenKind::RBrace)?;
+        Ok(StructDef { name, fields, line })
+    }
+
+    fn parse_enum_def(&mut self) -> Result<EnumDef, String> {
+        let enum_tok = self.expect(&TokenKind::Enum)?;
+        let line = enum_tok.line;
+        let (name, _) = self.expect_identifier()?;
+        self.expect(&TokenKind::LBrace)?;
+        let mut variants = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+            let (variant_name, _) = self.expect_identifier()?;
+            let kind = if self.check(&TokenKind::LParen) {
+                // Tuple variant
+                self.advance();
+                let mut types = Vec::new();
+                if !self.check(&TokenKind::RParen) {
+                    types.push(self.parse_type()?);
+                    while self.check(&TokenKind::Comma) {
+                        self.advance();
+                        if !self.check(&TokenKind::RParen) {
+                            types.push(self.parse_type()?);
+                        }
+                    }
+                }
+                self.expect(&TokenKind::RParen)?;
+                VariantKind::Tuple(types)
+            } else if self.check(&TokenKind::LBrace) {
+                // Struct variant
+                self.advance();
+                let mut fields = Vec::new();
+                while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+                    let (field_name, _) = self.expect_identifier()?;
+                    self.expect(&TokenKind::Colon)?;
+                    let field_type = self.parse_type()?;
+                    fields.push(FieldDef {
+                        name: field_name,
+                        field_type,
+                    });
+                    if !self.check(&TokenKind::RBrace) && self.check(&TokenKind::Comma) {
+                        self.advance();
+                    }
+                }
+                self.expect(&TokenKind::RBrace)?;
+                VariantKind::Struct(fields)
+            } else {
+                VariantKind::Unit
+            };
+            variants.push(VariantDef {
+                name: variant_name,
+                kind,
+            });
+            if !self.check(&TokenKind::RBrace) && self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(&TokenKind::RBrace)?;
+        Ok(EnumDef {
+            name,
+            variants,
+            line,
+        })
+    }
+
     // --- Function ---
 
     fn parse_function_def(&mut self) -> Result<FunctionDef, String> {
@@ -87,8 +199,14 @@ impl Parser {
             }
         }
         self.expect(&TokenKind::RParen)?;
-        self.expect(&TokenKind::Arrow)?;
-        let return_type = self.parse_type()?;
+
+        let return_type = if self.check(&TokenKind::Arrow) {
+            self.advance();
+            self.parse_type()?
+        } else {
+            Type::Unit
+        };
+
         let body = self.parse_block()?;
 
         Ok(FunctionDef {
@@ -108,8 +226,67 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<Type, String> {
-        self.expect(&TokenKind::I32)?;
-        Ok(Type::I32)
+        let tok = self.peek().clone();
+        match &tok.kind {
+            TokenKind::I8 => {
+                self.advance();
+                Ok(Type::I8)
+            }
+            TokenKind::I16 => {
+                self.advance();
+                Ok(Type::I16)
+            }
+            TokenKind::I32 => {
+                self.advance();
+                Ok(Type::I32)
+            }
+            TokenKind::I64 => {
+                self.advance();
+                Ok(Type::I64)
+            }
+            TokenKind::F32 => {
+                self.advance();
+                Ok(Type::F32)
+            }
+            TokenKind::F64 => {
+                self.advance();
+                Ok(Type::F64)
+            }
+            TokenKind::Bool => {
+                self.advance();
+                Ok(Type::Bool)
+            }
+            TokenKind::LParen => {
+                self.advance();
+                if self.check(&TokenKind::RParen) {
+                    self.advance();
+                    return Ok(Type::Unit);
+                }
+                // Tuple type
+                let mut types = vec![self.parse_type()?];
+                while self.check(&TokenKind::Comma) {
+                    self.advance();
+                    if !self.check(&TokenKind::RParen) {
+                        types.push(self.parse_type()?);
+                    }
+                }
+                self.expect(&TokenKind::RParen)?;
+                if types.len() == 1 {
+                    // Just parenthesized type
+                    Ok(types.into_iter().next().unwrap())
+                } else {
+                    Ok(Type::Tuple(types))
+                }
+            }
+            TokenKind::Identifier(_) => {
+                let (name, _) = self.expect_identifier()?;
+                Ok(Type::Named(name))
+            }
+            _ => Err(format!(
+                "{}:{}: 型が期待されましたが {:?} が見つかりました",
+                tok.line, tok.column, tok.kind
+            )),
+        }
     }
 
     // --- Block ---
@@ -121,13 +298,14 @@ impl Parser {
         let mut tail_expr: Option<Box<Expr>> = None;
 
         while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
-            // Try to determine if this is a statement or a tail expression
             if self.check(&TokenKind::Let) {
                 stmts.push(self.parse_let_stmt()?);
-            } else if self.check(&TokenKind::While) {
-                stmts.push(self.parse_while_stmt()?);
             } else if self.check(&TokenKind::Return) {
                 stmts.push(self.parse_return_stmt()?);
+            } else if self.check(&TokenKind::Break) {
+                stmts.push(self.parse_break_stmt()?);
+            } else if self.check(&TokenKind::Continue) {
+                stmts.push(self.parse_continue_stmt()?);
             } else {
                 // Parse as expression, then decide if it's a statement or tail expression
                 let expr = self.parse_expression()?;
@@ -139,8 +317,6 @@ impl Parser {
                     // Tail expression (last expression before closing brace)
                     tail_expr = Some(Box::new(expr));
                 } else if Self::expr_ends_with_block(&expr) {
-                    // Expressions ending with a block (if, block expr)
-                    // don't need semicolons when used as statements
                     stmts.push(Stmt::Expr(expr));
                 } else {
                     let tok = self.peek();
@@ -171,8 +347,14 @@ impl Parser {
             false
         };
         let (name, _) = self.expect_identifier()?;
-        self.expect(&TokenKind::Colon)?;
-        let var_type = self.parse_type()?;
+
+        let var_type = if self.check(&TokenKind::Colon) {
+            self.advance();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+
         self.expect(&TokenKind::Eq)?;
         let init = self.parse_expression()?;
         self.expect(&TokenKind::Semicolon)?;
@@ -186,31 +368,69 @@ impl Parser {
         })
     }
 
-    fn parse_while_stmt(&mut self) -> Result<Stmt, String> {
-        self.expect(&TokenKind::While)?;
-        let condition = self.parse_expression()?;
-        let body = self.parse_block()?;
-        Ok(Stmt::While { condition, body })
-    }
-
     fn parse_return_stmt(&mut self) -> Result<Stmt, String> {
         let ret_tok = self.expect(&TokenKind::Return)?;
         let line = ret_tok.line;
-        let value = self.parse_expression()?;
+        if self.check(&TokenKind::Semicolon) {
+            self.advance();
+            Ok(Stmt::Return { value: None, line })
+        } else {
+            let value = self.parse_expression()?;
+            self.expect(&TokenKind::Semicolon)?;
+            Ok(Stmt::Return {
+                value: Some(value),
+                line,
+            })
+        }
+    }
+
+    fn parse_break_stmt(&mut self) -> Result<Stmt, String> {
+        let break_tok = self.expect(&TokenKind::Break)?;
+        let line = break_tok.line;
+        let label = if let TokenKind::Label(_) = &self.peek().kind {
+            let tok = self.advance().clone();
+            if let TokenKind::Label(name) = tok.kind {
+                Some(name)
+            } else {
+                unreachable!()
+            }
+        } else {
+            None
+        };
+        let value = if !self.check(&TokenKind::Semicolon) {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
         self.expect(&TokenKind::Semicolon)?;
-        Ok(Stmt::Return { value, line })
+        Ok(Stmt::Break { label, value, line })
+    }
+
+    fn parse_continue_stmt(&mut self) -> Result<Stmt, String> {
+        let cont_tok = self.expect(&TokenKind::Continue)?;
+        let line = cont_tok.line;
+        let label = if let TokenKind::Label(_) = &self.peek().kind {
+            let tok = self.advance().clone();
+            if let TokenKind::Label(name) = tok.kind {
+                Some(name)
+            } else {
+                unreachable!()
+            }
+        } else {
+            None
+        };
+        self.expect(&TokenKind::Semicolon)?;
+        Ok(Stmt::Continue { label, line })
     }
 
     // --- Expressions (precedence climbing) ---
 
     fn parse_expression(&mut self) -> Result<Expr, String> {
         // Check for assignment: identifier = expr
-        // We look ahead: if current is Identifier and next is '='  (not '==')
         if let TokenKind::Identifier(_) = &self.peek().kind
             && self.pos + 1 < self.tokens.len()
             && let TokenKind::Eq = &self.tokens[self.pos + 1].kind
         {
-            // This is an assignment
             let (name, line) = self.expect_identifier()?;
             self.expect(&TokenKind::Eq)?;
             let value = self.parse_expression()?;
@@ -319,7 +539,7 @@ impl Parser {
     }
 
     fn parse_multiplication(&mut self) -> Result<Expr, String> {
-        let mut left = self.parse_unary()?;
+        let mut left = self.parse_cast()?;
         loop {
             let op = if self.check(&TokenKind::Star) {
                 BinOp::Mul
@@ -331,7 +551,7 @@ impl Parser {
                 break;
             };
             self.advance();
-            let right = self.parse_unary()?;
+            let right = self.parse_cast()?;
             left = Expr::BinaryOp {
                 op,
                 left: Box::new(left),
@@ -339,6 +559,19 @@ impl Parser {
             };
         }
         Ok(left)
+    }
+
+    fn parse_cast(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_unary()?;
+        while self.check(&TokenKind::As) {
+            self.advance();
+            let target_type = self.parse_type()?;
+            expr = Expr::Cast {
+                expr: Box::new(expr),
+                target_type,
+            };
+        }
+        Ok(expr)
     }
 
     fn parse_unary(&mut self) -> Result<Expr, String> {
@@ -358,16 +591,63 @@ impl Parser {
                 operand: Box::new(operand),
             });
         }
-        self.parse_primary()
+        self.parse_postfix()
+    }
+
+    fn parse_postfix(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_primary()?;
+        loop {
+            if self.check(&TokenKind::Dot) {
+                self.advance();
+                // Check for tuple index (integer literal) or field name
+                let tok = self.peek().clone();
+                match &tok.kind {
+                    TokenKind::IntegerLiteral {
+                        value,
+                        suffix: None,
+                    } => {
+                        let index = *value as u32;
+                        self.advance();
+                        expr = Expr::TupleIndex {
+                            expr: Box::new(expr),
+                            index,
+                        };
+                    }
+                    TokenKind::Identifier(_) => {
+                        let (field, _) = self.expect_identifier()?;
+                        expr = Expr::FieldAccess {
+                            expr: Box::new(expr),
+                            field,
+                        };
+                    }
+                    _ => {
+                        return Err(format!(
+                            "{}:{}: フィールド名または整数インデックスが期待されました",
+                            tok.line, tok.column
+                        ));
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
     }
 
     fn parse_primary(&mut self) -> Result<Expr, String> {
         let tok = self.peek().clone();
         match &tok.kind {
-            TokenKind::IntegerLiteral(val) => {
-                let val = *val;
+            TokenKind::IntegerLiteral { value, suffix } => {
+                let value = *value;
+                let suffix = *suffix;
                 self.advance();
-                Ok(Expr::IntegerLiteral(val))
+                Ok(Expr::IntegerLiteral { value, suffix })
+            }
+            TokenKind::FloatLiteral { value, suffix } => {
+                let value = *value;
+                let suffix = *suffix;
+                self.advance();
+                Ok(Expr::FloatLiteral { value, suffix })
             }
             TokenKind::True => {
                 self.advance();
@@ -379,6 +659,21 @@ impl Parser {
             }
             TokenKind::Identifier(_) => {
                 let (name, line) = self.expect_identifier()?;
+
+                // Check for :: (enum construction)
+                if self.check(&TokenKind::ColonColon) {
+                    return self.parse_enum_expr(name, line);
+                }
+
+                // Check for struct expression: Name { field: expr, ... }
+                if self.check(&TokenKind::LBrace) {
+                    // Look ahead to determine if this is a struct expression or a block
+                    // struct expression: Name { ident : ...
+                    if self.is_struct_expr_start() {
+                        return self.parse_struct_expr(name, line);
+                    }
+                }
+
                 if self.check(&TokenKind::LParen) {
                     // Function call
                     self.advance();
@@ -398,11 +693,50 @@ impl Parser {
             }
             TokenKind::LParen => {
                 self.advance();
-                let expr = self.parse_expression()?;
-                self.expect(&TokenKind::RParen)?;
-                Ok(expr)
+                // Check for unit literal ()
+                if self.check(&TokenKind::RParen) {
+                    self.advance();
+                    return Ok(Expr::UnitLiteral);
+                }
+                let first = self.parse_expression()?;
+                if self.check(&TokenKind::Comma) {
+                    // Tuple expression
+                    let mut elems = vec![first];
+                    while self.check(&TokenKind::Comma) {
+                        self.advance();
+                        if !self.check(&TokenKind::RParen) {
+                            elems.push(self.parse_expression()?);
+                        }
+                    }
+                    self.expect(&TokenKind::RParen)?;
+                    Ok(Expr::TupleExpr(elems))
+                } else {
+                    self.expect(&TokenKind::RParen)?;
+                    Ok(first)
+                }
             }
             TokenKind::If => self.parse_if_expression(),
+            TokenKind::While => self.parse_while_expression(None),
+            TokenKind::Label(_) => {
+                // Labeled while: 'label: while ...
+                let label_tok = self.advance().clone();
+                let label = if let TokenKind::Label(name) = label_tok.kind {
+                    name
+                } else {
+                    unreachable!()
+                };
+                self.expect(&TokenKind::Colon)?;
+                if self.check(&TokenKind::While) {
+                    self.parse_while_expression(Some(label))
+                } else {
+                    let tok = self.peek();
+                    Err(format!(
+                        "{}:{}: ラベルの後に while が期待されました",
+                        tok.line, tok.column
+                    ))
+                }
+            }
+            TokenKind::Match => self.parse_match_expression(),
             TokenKind::LBrace => {
                 let block = self.parse_block()?;
                 Ok(Expr::Block(block))
@@ -412,6 +746,84 @@ impl Parser {
                 tok.line, tok.column, tok.kind
             )),
         }
+    }
+
+    fn is_struct_expr_start(&self) -> bool {
+        // Look after '{' for 'ident :'
+        if self.pos + 2 < self.tokens.len() {
+            if let TokenKind::Identifier(_) = &self.tokens[self.pos + 1].kind
+                && let TokenKind::Colon = &self.tokens[self.pos + 2].kind
+            {
+                // Make sure it's not ::
+                if self.pos + 3 < self.tokens.len()
+                    && let TokenKind::Colon = &self.tokens[self.pos + 3].kind
+                {
+                    return false;
+                }
+                return true;
+            }
+            // Also check for empty struct: Name { }
+            if let TokenKind::RBrace = &self.tokens[self.pos + 1].kind {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn parse_struct_expr(&mut self, name: String, line: usize) -> Result<Expr, String> {
+        self.expect(&TokenKind::LBrace)?;
+        let mut fields = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+            let (field_name, _) = self.expect_identifier()?;
+            self.expect(&TokenKind::Colon)?;
+            let value = self.parse_expression()?;
+            fields.push((field_name, value));
+            if !self.check(&TokenKind::RBrace) && self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(&TokenKind::RBrace)?;
+        Ok(Expr::StructExpr { name, fields, line })
+    }
+
+    fn parse_enum_expr(&mut self, enum_name: String, line: usize) -> Result<Expr, String> {
+        self.expect(&TokenKind::ColonColon)?;
+        let (variant, _) = self.expect_identifier()?;
+        let args = if self.check(&TokenKind::LParen) {
+            self.advance();
+            let mut exprs = Vec::new();
+            if !self.check(&TokenKind::RParen) {
+                exprs.push(self.parse_expression()?);
+                while self.check(&TokenKind::Comma) {
+                    self.advance();
+                    exprs.push(self.parse_expression()?);
+                }
+            }
+            self.expect(&TokenKind::RParen)?;
+            EnumArgs::Tuple(exprs)
+        } else if self.check(&TokenKind::LBrace) {
+            self.advance();
+            let mut fields = Vec::new();
+            while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+                let (field_name, _) = self.expect_identifier()?;
+                self.expect(&TokenKind::Colon)?;
+                let value = self.parse_expression()?;
+                fields.push((field_name, value));
+                if !self.check(&TokenKind::RBrace) && self.check(&TokenKind::Comma) {
+                    self.advance();
+                }
+            }
+            self.expect(&TokenKind::RBrace)?;
+            EnumArgs::Struct(fields)
+        } else {
+            EnumArgs::Unit
+        };
+        Ok(Expr::EnumExpr {
+            enum_name,
+            variant,
+            args,
+            line,
+        })
     }
 
     fn parse_if_expression(&mut self) -> Result<Expr, String> {
@@ -437,6 +849,218 @@ impl Parser {
             then_block,
             else_block,
         })
+    }
+
+    fn parse_while_expression(&mut self, label: Option<String>) -> Result<Expr, String> {
+        self.expect(&TokenKind::While)?;
+        let condition = self.parse_expression()?;
+        let body = self.parse_block()?;
+        Ok(Expr::While {
+            label,
+            condition: Box::new(condition),
+            body,
+        })
+    }
+
+    fn parse_match_expression(&mut self) -> Result<Expr, String> {
+        self.expect(&TokenKind::Match)?;
+        let expr = self.parse_expression()?;
+        self.expect(&TokenKind::LBrace)?;
+        let mut arms = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+            let pattern = self.parse_pattern()?;
+            self.expect(&TokenKind::FatArrow)?;
+            let body = self.parse_expression()?;
+            arms.push(MatchArm { pattern, body });
+            if !self.check(&TokenKind::RBrace) && self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(&TokenKind::RBrace)?;
+        Ok(Expr::Match {
+            expr: Box::new(expr),
+            arms,
+        })
+    }
+
+    fn parse_pattern(&mut self) -> Result<Pattern, String> {
+        let tok = self.peek().clone();
+        match &tok.kind {
+            TokenKind::True => {
+                self.advance();
+                Ok(Pattern::BoolLiteral(true))
+            }
+            TokenKind::False => {
+                self.advance();
+                Ok(Pattern::BoolLiteral(false))
+            }
+            TokenKind::IntegerLiteral { value, .. } => {
+                let value = *value;
+                self.advance();
+                // Check for range pattern
+                if self.check(&TokenKind::DotDotEq) {
+                    self.advance();
+                    let end = self.parse_pattern_int()?;
+                    Ok(Pattern::Range { start: value, end })
+                } else {
+                    Ok(Pattern::IntLiteral(value))
+                }
+            }
+            TokenKind::Minus => {
+                // Negative integer pattern
+                self.advance();
+                if let TokenKind::IntegerLiteral { value, .. } = &self.peek().kind {
+                    let value = -(*value);
+                    self.advance();
+                    if self.check(&TokenKind::DotDotEq) {
+                        self.advance();
+                        let end = self.parse_pattern_int()?;
+                        Ok(Pattern::Range { start: value, end })
+                    } else {
+                        Ok(Pattern::IntLiteral(value))
+                    }
+                } else {
+                    let tok = self.peek();
+                    Err(format!(
+                        "{}:{}: パターン内の'-'の後に整数リテラルが期待されました",
+                        tok.line, tok.column
+                    ))
+                }
+            }
+            TokenKind::Identifier(name) => {
+                let name = name.clone();
+                let line = tok.line;
+                self.advance();
+                // Check for enum pattern: Name::Variant(...)
+                if self.check(&TokenKind::ColonColon) {
+                    self.advance();
+                    let (variant, _) = self.expect_identifier()?;
+                    let args = if self.check(&TokenKind::LParen) {
+                        self.advance();
+                        let mut patterns = Vec::new();
+                        if !self.check(&TokenKind::RParen) {
+                            patterns.push(self.parse_pattern()?);
+                            while self.check(&TokenKind::Comma) {
+                                self.advance();
+                                if !self.check(&TokenKind::RParen) {
+                                    patterns.push(self.parse_pattern()?);
+                                }
+                            }
+                        }
+                        self.expect(&TokenKind::RParen)?;
+                        EnumPatternArgs::Tuple(patterns)
+                    } else if self.check(&TokenKind::LBrace) {
+                        self.advance();
+                        let mut fields = Vec::new();
+                        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+                            let (field_name, _) = self.expect_identifier()?;
+                            let pat = if self.check(&TokenKind::Colon) {
+                                self.advance();
+                                self.parse_pattern()?
+                            } else {
+                                Pattern::Binding(field_name.clone())
+                            };
+                            fields.push((field_name, pat));
+                            if !self.check(&TokenKind::RBrace) && self.check(&TokenKind::Comma) {
+                                self.advance();
+                            }
+                        }
+                        self.expect(&TokenKind::RBrace)?;
+                        EnumPatternArgs::Struct(fields)
+                    } else {
+                        EnumPatternArgs::Unit
+                    };
+                    Ok(Pattern::Enum {
+                        enum_name: name,
+                        variant,
+                        args,
+                    })
+                } else if self.check(&TokenKind::LBrace) {
+                    // Struct pattern: Name { field1, field2: pattern }
+                    self.advance();
+                    let mut fields = Vec::new();
+                    while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+                        let (field_name, _) = self.expect_identifier()?;
+                        let pat = if self.check(&TokenKind::Colon) {
+                            self.advance();
+                            self.parse_pattern()?
+                        } else {
+                            Pattern::Binding(field_name.clone())
+                        };
+                        fields.push((field_name, pat));
+                        if !self.check(&TokenKind::RBrace) && self.check(&TokenKind::Comma) {
+                            self.advance();
+                        }
+                    }
+                    self.expect(&TokenKind::RBrace)?;
+                    Ok(Pattern::Struct { name, fields })
+                } else {
+                    // Check if this is a known struct/enum name or just a binding
+                    // At parse time we can't know, so we treat lowercase-start as binding
+                    // and uppercase-start as a potential type name
+                    // Actually, we'll just use Binding for all identifiers at parse time;
+                    // semantic analysis will resolve
+                    let _ = line;
+                    Ok(Pattern::Binding(name))
+                }
+            }
+            TokenKind::LParen => {
+                // Tuple pattern
+                self.advance();
+                let mut patterns = Vec::new();
+                if !self.check(&TokenKind::RParen) {
+                    patterns.push(self.parse_pattern()?);
+                    while self.check(&TokenKind::Comma) {
+                        self.advance();
+                        if !self.check(&TokenKind::RParen) {
+                            patterns.push(self.parse_pattern()?);
+                        }
+                    }
+                }
+                self.expect(&TokenKind::RParen)?;
+                Ok(Pattern::Tuple(patterns))
+            }
+            _ => {
+                // Check for wildcard '_'
+                if let TokenKind::Identifier(name) = &tok.kind
+                    && name == "_"
+                {
+                    self.advance();
+                    return Ok(Pattern::Wildcard);
+                }
+                Err(format!(
+                    "{}:{}: パターンが期待されましたが {:?} が見つかりました",
+                    tok.line, tok.column, tok.kind
+                ))
+            }
+        }
+    }
+
+    fn parse_pattern_int(&mut self) -> Result<i64, String> {
+        if self.check(&TokenKind::Minus) {
+            self.advance();
+            if let TokenKind::IntegerLiteral { value, .. } = &self.peek().kind {
+                let value = -(*value);
+                self.advance();
+                Ok(value)
+            } else {
+                let tok = self.peek();
+                Err(format!(
+                    "{}:{}: 範囲パターンの終端に整数リテラルが期待されました",
+                    tok.line, tok.column
+                ))
+            }
+        } else if let TokenKind::IntegerLiteral { value, .. } = &self.peek().kind {
+            let value = *value;
+            self.advance();
+            Ok(value)
+        } else {
+            let tok = self.peek();
+            Err(format!(
+                "{}:{}: 範囲パターンの終端に整数リテラルが期待されました",
+                tok.line, tok.column
+            ))
+        }
     }
 }
 
@@ -515,19 +1139,26 @@ mod tests {
     }
 
     #[test]
-    fn while_statement() {
+    fn while_expression() {
         let prog = parse_ok("fn main() -> i32 { while true { 0; } 0 }");
-        assert!(matches!(
-            &prog.functions[0].body.stmts[0],
-            Stmt::While { .. }
-        ));
+        if let Stmt::Expr(Expr::While { .. }) = &prog.functions[0].body.stmts[0] {
+            // ok
+        } else {
+            panic!("expected While expression");
+        }
     }
 
     #[test]
     fn integer_literal_expr() {
         let prog = parse_ok("fn main() -> i32 { 42 }");
         if let Some(expr) = &prog.functions[0].body.expr {
-            assert!(matches!(expr.as_ref(), Expr::IntegerLiteral(42)));
+            assert!(matches!(
+                expr.as_ref(),
+                Expr::IntegerLiteral {
+                    value: 42,
+                    suffix: None
+                }
+            ));
         } else {
             panic!("expected tail expression");
         }
@@ -563,7 +1194,6 @@ mod tests {
 
     #[test]
     fn operator_precedence_mul_over_add() {
-        // 1 + 2 * 3 should parse as 1 + (2 * 3)
         let prog = parse_ok("fn main() -> i32 { 1 + 2 * 3 }");
         if let Some(expr) = &prog.functions[0].body.expr {
             if let Expr::BinaryOp {
@@ -586,11 +1216,9 @@ mod tests {
 
     #[test]
     fn operator_precedence_comparison_over_logical() {
-        // a < b && c > d should parse as (a < b) && (c > d)
         let prog = parse_ok(
             "fn main() -> i32 { let a: i32 = 1; let b: i32 = 2; let c: i32 = 3; let d: i32 = 4; if a < b && c > d { 1 } else { 0 } }",
         );
-        // If it parses successfully, precedence is correct (otherwise && would consume < as operand)
         assert_eq!(prog.functions.len(), 1);
     }
 
@@ -701,7 +1329,6 @@ mod tests {
     fn parenthesized_expression() {
         let prog = parse_ok("fn main() -> i32 { (1 + 2) * 3 }");
         if let Some(expr) = &prog.functions[0].body.expr {
-            // (1+2)*3 => Mul at top, left should be Add
             if let Expr::BinaryOp {
                 op: BinOp::Mul,
                 left,
@@ -743,5 +1370,96 @@ mod tests {
         );
         assert_eq!(prog.functions[0].body.stmts.len(), 2);
         assert!(prog.functions[0].body.expr.is_some());
+    }
+
+    // MS2 tests
+
+    #[test]
+    fn let_type_inference() {
+        let prog = parse_ok("fn main() -> i32 { let x = 42; x }");
+        if let Stmt::Let { var_type, .. } = &prog.functions[0].body.stmts[0] {
+            assert_eq!(*var_type, None);
+        } else {
+            panic!("expected Let statement");
+        }
+    }
+
+    #[test]
+    fn unit_return_type() {
+        let prog = parse_ok("fn foo() { }");
+        assert_eq!(prog.functions[0].return_type, Type::Unit);
+    }
+
+    #[test]
+    fn cast_expression() {
+        let prog = parse_ok("fn main() -> i32 { 42i64 as i32 }");
+        if let Some(expr) = &prog.functions[0].body.expr {
+            assert!(matches!(expr.as_ref(), Expr::Cast { .. }));
+        } else {
+            panic!("expected tail expression");
+        }
+    }
+
+    #[test]
+    fn struct_definition() {
+        let prog = parse_ok(
+            "struct Point { x: i32, y: i32 }
+             fn main() -> i32 { 0 }",
+        );
+        assert_eq!(prog.structs.len(), 1);
+        assert_eq!(prog.structs[0].name, "Point");
+        assert_eq!(prog.structs[0].fields.len(), 2);
+    }
+
+    #[test]
+    fn enum_definition() {
+        let prog = parse_ok(
+            "enum Color { Red, Green, Blue }
+             fn main() -> i32 { 0 }",
+        );
+        assert_eq!(prog.enums.len(), 1);
+        assert_eq!(prog.enums[0].name, "Color");
+        assert_eq!(prog.enums[0].variants.len(), 3);
+    }
+
+    #[test]
+    fn match_expression_parse() {
+        let prog = parse_ok("fn main() -> i32 { match 1 { 0 => 10, 1 => 20, _ => 30 } }");
+        if let Some(Expr::Match { arms, .. }) = prog.functions[0].body.expr.as_deref() {
+            assert_eq!(arms.len(), 3);
+        } else {
+            panic!("expected Match expression");
+        }
+    }
+
+    #[test]
+    fn break_continue_parse() {
+        let prog = parse_ok(
+            "fn main() -> i32 {
+                let mut x: i32 = 0;
+                while x < 10 {
+                    x = x + 1;
+                    if x == 5 { break; }
+                    if x == 3 { continue; }
+                }
+                x
+            }",
+        );
+        assert_eq!(prog.functions.len(), 1);
+    }
+
+    #[test]
+    fn tuple_expression_parse() {
+        let prog = parse_ok("fn main() -> i32 { let t = (1, 2, 3); t.0 }");
+        assert_eq!(prog.functions.len(), 1);
+    }
+
+    #[test]
+    fn field_access_parse() {
+        let prog = parse_ok(
+            "struct Point { x: i32, y: i32 }
+             fn main() -> i32 { let p = Point { x: 1, y: 2 }; p.x }",
+        );
+        assert_eq!(prog.functions.len(), 1);
     }
 }

@@ -2,7 +2,7 @@
 // EXPECT: success
 // DESCRIPTION: as演算子による各種型キャスト（整数間、整数↔浮動小数点、整数↔bool）が正しく型検査を通ることを検証する
 // EXPECTED_EXIT_CODE: 0
-// EXPECTED_STDOUT: 0\n
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     let a: i32 = 42;

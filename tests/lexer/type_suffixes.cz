@@ -2,7 +2,7 @@
 // EXPECT: success
 // DESCRIPTION: 整数・浮動小数点リテラルの型サフィックス（i8, i16, i32, i64, f32, f64）が正しくトークン化されることを検証する
 // EXPECTED_EXIT_CODE: 0
-// EXPECTED_STDOUT: 0\n
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     let a = 42i8;

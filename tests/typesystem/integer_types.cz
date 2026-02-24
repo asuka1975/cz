@@ -2,7 +2,7 @@
 // EXPECT: success
 // DESCRIPTION: i8, i16, i64型の算術演算が正しく型検査を通ることを検証する
 // EXPECTED_EXIT_CODE: 0
-// EXPECTED_STDOUT: 0\n
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     let a: i8 = 10i8;

@@ -6,18 +6,18 @@
 
 fn main() -> i32 {
     // AND
-    let a: i32 = true && true;    // 1
-    let b: i32 = true && false;   // 0
-    let c: i32 = false && true;   // 0 (短絡評価)
+    let a: bool = true && true;    // true
+    let b: bool = true && false;   // false
+    let c: bool = false && true;   // false (短絡評価)
 
     // OR
-    let d: i32 = false || true;   // 1
-    let e: i32 = true || false;   // true の値 (短絡評価)
-    let f: i32 = false || false;  // 0
+    let d: bool = false || true;   // true
+    let e: bool = true || false;   // true (短絡評価)
+    let f: bool = false || false;  // false
 
     // NOT
-    let g: i32 = !true;   // 0
-    let h: i32 = !false;  // 1
+    let g: bool = !true;   // false
+    let h: bool = !false;  // true
 
     0
 }

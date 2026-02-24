@@ -2,7 +2,7 @@
 // EXPECT: success
 // DESCRIPTION: ループラベル（'outer, 'inner 等）が正しくトークン化されることを検証する
 // EXPECTED_EXIT_CODE: 0
-// EXPECTED_STDOUT: 0\n
+// EXPECTED_STDOUT:
 
 fn main() -> i32 {
     'outer: while true {

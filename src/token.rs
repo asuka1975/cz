@@ -1,3 +1,17 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntSuffix {
+    I8,
+    I16,
+    I32,
+    I64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatSuffix {
+    F32,
+    F64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     // Keywords
@@ -10,15 +24,34 @@ pub enum TokenKind {
     While,
     True,
     False,
+    Match,
+    Break,
+    Continue,
+    Struct,
+    Enum,
+    As,
 
     // Literals
-    IntegerLiteral(i64),
+    IntegerLiteral {
+        value: i64,
+        suffix: Option<IntSuffix>,
+    },
+    FloatLiteral {
+        value: f64,
+        suffix: Option<FloatSuffix>,
+    },
 
     // Identifier
     Identifier(String),
 
-    // Type keyword
+    // Type keywords
+    I8,
+    I16,
     I32,
+    I64,
+    F32,
+    F64,
+    Bool,
 
     // Operators
     Plus,
@@ -51,9 +84,16 @@ pub enum TokenKind {
 
     // Punctuation
     Colon,
+    ColonColon,
     Semicolon,
     Comma,
     Arrow,
+    FatArrow,
+    Dot,
+    DotDotEq,
+
+    // Label
+    Label(String),
 
     // Special
     Eof,
