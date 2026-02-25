@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::token::{FloatSuffix, IntSuffix};
+use crate::type_context::{TypeContext, TypeMap, VariantInfo, collect_pattern_bindings};
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
@@ -12,75 +12,25 @@ struct Scope {
     vars: HashMap<String, VarInfo>,
 }
 
-#[derive(Clone, Debug)]
-struct FuncInfo {
-    param_count: usize,
-    param_types: Vec<Type>,
-    return_type: Type,
-}
-
-#[derive(Clone, Debug)]
-struct StructInfo {
-    fields: Vec<(String, Type)>,
-}
-
-#[derive(Clone, Debug)]
-struct EnumInfo {
-    variants: Vec<(String, VariantInfo)>,
-}
-
-#[derive(Clone, Debug)]
-enum VariantInfo {
-    Unit,
-    Tuple(Vec<Type>),
-    Struct(Vec<(String, Type)>),
-}
-
 struct LoopContext {
     label: Option<String>,
-    #[allow(dead_code)]
-    break_type: Option<Type>,
 }
 
-pub struct SemanticAnalyzer {
+pub struct SemanticAnalyzer<'a> {
+    ctx: &'a TypeContext,
+    type_map: &'a TypeMap,
     scopes: Vec<Scope>,
-    functions: HashMap<String, FuncInfo>,
-    structs: HashMap<String, StructInfo>,
-    enums: HashMap<String, EnumInfo>,
     errors: Vec<String>,
     current_return_type: Type,
     loop_stack: Vec<LoopContext>,
 }
 
-impl SemanticAnalyzer {
-    pub fn new() -> Self {
-        let mut functions = HashMap::new();
-
-        // Built-in print functions
-        for (name, param_type) in [
-            ("print_i8", Type::I8),
-            ("print_i16", Type::I16),
-            ("print_i32", Type::I32),
-            ("print_i64", Type::I64),
-            ("print_f32", Type::F32),
-            ("print_f64", Type::F64),
-            ("print_bool", Type::Bool),
-        ] {
-            functions.insert(
-                name.to_string(),
-                FuncInfo {
-                    param_count: 1,
-                    param_types: vec![param_type],
-                    return_type: Type::Unit,
-                },
-            );
-        }
-
+impl<'a> SemanticAnalyzer<'a> {
+    pub fn new(ctx: &'a TypeContext, type_map: &'a TypeMap) -> Self {
         Self {
+            ctx,
+            type_map,
             scopes: Vec::new(),
-            functions,
-            structs: HashMap::new(),
-            enums: HashMap::new(),
             errors: Vec::new(),
             current_return_type: Type::I32,
             loop_stack: Vec::new(),
@@ -88,71 +38,6 @@ impl SemanticAnalyzer {
     }
 
     pub fn analyze(&mut self, program: &Program) -> Result<(), Vec<String>> {
-        // Register structs
-        for s in &program.structs {
-            if self.structs.contains_key(&s.name) {
-                self.errors.push(format!(
-                    "{}行目: 構造体 '{}' は既に定義されています",
-                    s.line, s.name
-                ));
-            } else {
-                let fields = s
-                    .fields
-                    .iter()
-                    .map(|f| (f.name.clone(), f.field_type.clone()))
-                    .collect();
-                self.structs.insert(s.name.clone(), StructInfo { fields });
-            }
-        }
-
-        // Register enums
-        for e in &program.enums {
-            if self.enums.contains_key(&e.name) || self.structs.contains_key(&e.name) {
-                self.errors.push(format!(
-                    "{}行目: 列挙型 '{}' は既に定義されています",
-                    e.line, e.name
-                ));
-            } else {
-                let variants = e
-                    .variants
-                    .iter()
-                    .map(|v| {
-                        let info = match &v.kind {
-                            VariantKind::Unit => VariantInfo::Unit,
-                            VariantKind::Tuple(types) => VariantInfo::Tuple(types.clone()),
-                            VariantKind::Struct(fields) => VariantInfo::Struct(
-                                fields
-                                    .iter()
-                                    .map(|f| (f.name.clone(), f.field_type.clone()))
-                                    .collect(),
-                            ),
-                        };
-                        (v.name.clone(), info)
-                    })
-                    .collect();
-                self.enums.insert(e.name.clone(), EnumInfo { variants });
-            }
-        }
-
-        // First pass: register all functions
-        for func in &program.functions {
-            if self.functions.contains_key(&func.name) {
-                self.errors.push(format!(
-                    "{}行目: 関数 '{}' は既に定義されています",
-                    func.line, func.name
-                ));
-            } else {
-                self.functions.insert(
-                    func.name.clone(),
-                    FuncInfo {
-                        param_count: func.params.len(),
-                        param_types: func.params.iter().map(|p| p.param_type.clone()).collect(),
-                        return_type: func.return_type.clone(),
-                    },
-                );
-            }
-        }
-
         // Validate types used in struct fields and enum variant fields
         for s in &program.structs {
             for f in &s.fields {
@@ -177,7 +62,7 @@ impl SemanticAnalyzer {
             }
         }
 
-        // Second pass: analyze function bodies
+        // Analyze function bodies
         for func in &program.functions {
             self.analyze_function(func);
         }
@@ -191,8 +76,9 @@ impl SemanticAnalyzer {
 
     fn validate_type(&mut self, ty: &Type, line: usize) {
         match ty {
+            Type::Error => {}
             Type::Named(name) => {
-                if !self.structs.contains_key(name) && !self.enums.contains_key(name) {
+                if !self.ctx.structs.contains_key(name) && !self.ctx.enums.contains_key(name) {
                     self.errors
                         .push(format!("{}行目: 未定義の型 '{}'", line, name));
                 }
@@ -287,7 +173,7 @@ impl SemanticAnalyzer {
             if needs_value {
                 self.check_expr_has_value(expr);
             }
-            let ty = self.infer_expr_type(expr);
+            let ty = self.type_map.get(expr).clone();
             Some(ty)
         } else {
             None
@@ -305,14 +191,14 @@ impl SemanticAnalyzer {
             } => {
                 self.analyze_expr(init);
                 self.check_expr_has_value(init);
-                let init_type = self.infer_expr_type(init);
+                let init_type = self.type_map.get(init);
 
                 let resolved_type = if let Some(declared_type) = var_type {
                     self.validate_type(declared_type, *line);
-                    self.check_type_match(declared_type, &init_type, *line, "let 初期化式");
+                    self.check_type_match(declared_type, init_type, *line, "let 初期化式");
                     declared_type.clone()
                 } else {
-                    init_type
+                    init_type.clone()
                 };
 
                 self.define_var(name, *mutable, resolved_type, *line);
@@ -321,9 +207,9 @@ impl SemanticAnalyzer {
                 if let Some(val) = value {
                     self.analyze_expr(val);
                     self.check_expr_has_value(val);
-                    let ty = self.infer_expr_type(val);
+                    let ty = self.type_map.get(val);
                     let ret_type = self.current_return_type.clone();
-                    self.check_type_match(&ret_type, &ty, *line, "return 文");
+                    self.check_type_match(&ret_type, ty, *line, "return 文");
                 } else {
                     let ret_type = self.current_return_type.clone();
                     if ret_type != Type::Unit {
@@ -415,135 +301,11 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn infer_expr_type(&self, expr: &Expr) -> Type {
-        match expr {
-            Expr::IntegerLiteral { suffix, .. } => match suffix {
-                Some(IntSuffix::I8) => Type::I8,
-                Some(IntSuffix::I16) => Type::I16,
-                Some(IntSuffix::I32) => Type::I32,
-                Some(IntSuffix::I64) => Type::I64,
-                None => Type::I32, // default
-            },
-            Expr::FloatLiteral { suffix, .. } => match suffix {
-                Some(FloatSuffix::F32) => Type::F32,
-                Some(FloatSuffix::F64) => Type::F64,
-                None => Type::F64, // default
-            },
-            Expr::BoolLiteral(_) => Type::Bool,
-            Expr::UnitLiteral => Type::Unit,
-            Expr::Identifier(name, _) => {
-                if let Some(info) = self.find_var(name) {
-                    info.var_type.clone()
-                } else {
-                    Type::I32 // fallback for error case
-                }
-            }
-            Expr::BinaryOp { op, left, .. } => match op {
-                BinOp::Eq
-                | BinOp::NotEq
-                | BinOp::Lt
-                | BinOp::Gt
-                | BinOp::LtEq
-                | BinOp::GtEq
-                | BinOp::And
-                | BinOp::Or => Type::Bool,
-                _ => self.infer_expr_type(left),
-            },
-            Expr::UnaryOp { op, operand } => match op {
-                UnaryOp::Neg => self.infer_expr_type(operand),
-                UnaryOp::Not => Type::Bool,
-            },
-            Expr::Cast { target_type, .. } => target_type.clone(),
-            Expr::Call { name, .. } => {
-                if let Some(func_info) = self.functions.get(name) {
-                    func_info.return_type.clone()
-                } else {
-                    Type::I32 // fallback
-                }
-            }
-            Expr::Assign { .. } => Type::Unit,
-            Expr::If {
-                then_block,
-                else_block,
-                ..
-            } => {
-                if else_block.is_some() {
-                    if let Some(tail) = &then_block.expr {
-                        self.infer_expr_type(tail)
-                    } else {
-                        Type::Unit
-                    }
-                } else {
-                    Type::Unit
-                }
-            }
-            Expr::While { body, .. } => {
-                // If there are break statements with values, the while expression type
-                // is the type of the break value; otherwise Unit
-                if let Some(ty) = self.find_break_value_type_in_block(body) {
-                    ty
-                } else {
-                    Type::Unit
-                }
-            }
-            Expr::Match { arms, .. } => {
-                if let Some(first_arm) = arms.first() {
-                    self.infer_expr_type(&first_arm.body)
-                } else {
-                    Type::Unit
-                }
-            }
-            Expr::Block(block) => {
-                if let Some(tail) = &block.expr {
-                    self.infer_expr_type(tail)
-                } else {
-                    Type::Unit
-                }
-            }
-            Expr::FieldAccess { expr, field } => {
-                let base_type = self.infer_expr_type(expr);
-                if let Type::Named(name) = &base_type
-                    && let Some(struct_info) = self.structs.get(name)
-                {
-                    for (fname, ftype) in &struct_info.fields {
-                        if fname == field {
-                            return ftype.clone();
-                        }
-                    }
-                }
-                Type::I32 // fallback
-            }
-            Expr::TupleIndex { expr, index } => {
-                let base_type = self.infer_expr_type(expr);
-                if let Type::Tuple(types) = &base_type
-                    && (*index as usize) < types.len()
-                {
-                    return types[*index as usize].clone();
-                }
-                Type::I32 // fallback
-            }
-            Expr::TupleExpr(elems) => {
-                let types: Vec<Type> = elems.iter().map(|e| self.infer_expr_type(e)).collect();
-                Type::Tuple(types)
-            }
-            Expr::StructExpr { name, .. } => Type::Named(name.clone()),
-            Expr::EnumExpr { enum_name, .. } => Type::Named(enum_name.clone()),
-        }
-    }
-
-    fn is_integer_type(ty: &Type) -> bool {
-        matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64)
-    }
-
-    fn is_float_type(ty: &Type) -> bool {
-        matches!(ty, Type::F32 | Type::F64)
-    }
-
-    fn is_numeric_type(ty: &Type) -> bool {
-        Self::is_integer_type(ty) || Self::is_float_type(ty)
-    }
-
     fn check_type_match(&mut self, expected: &Type, actual: &Type, line: usize, context: &str) {
+        // Type::Error が含まれる場合はカスケードエラーを防止
+        if *expected == Type::Error || *actual == Type::Error {
+            return;
+        }
         if expected != actual {
             self.errors.push(format!(
                 "{}行目: {}: {:?} が期待されましたが {:?} が見つかりました",
@@ -567,18 +329,23 @@ impl SemanticAnalyzer {
             Expr::BinaryOp { op, left, right } => {
                 self.analyze_expr(left);
                 self.analyze_expr(right);
-                let left_type = self.infer_expr_type(left);
-                let right_type = self.infer_expr_type(right);
+                let left_type = self.type_map.get(left);
+                let right_type = self.type_map.get(right);
+
+                // Type::Error が含まれる場合はカスケードエラーを防止
+                if *left_type == Type::Error || *right_type == Type::Error {
+                    return;
+                }
 
                 match op {
                     BinOp::And | BinOp::Or => {
-                        if left_type != Type::Bool {
+                        if *left_type != Type::Bool {
                             self.errors.push(format!(
                                 "論理演算子の左辺には bool 型が必要ですが {:?} が見つかりました",
                                 left_type
                             ));
                         }
-                        if right_type != Type::Bool {
+                        if *right_type != Type::Bool {
                             self.errors.push(format!(
                                 "論理演算子の右辺には bool 型が必要ですが {:?} が見つかりました",
                                 right_type
@@ -586,7 +353,7 @@ impl SemanticAnalyzer {
                         }
                     }
                     BinOp::Mod => {
-                        if !Self::is_integer_type(&left_type) {
+                        if !left_type.is_integer() {
                             self.errors.push(format!(
                                 "剰余演算子は整数型にのみ使用できますが {:?} が見つかりました",
                                 left_type
@@ -599,7 +366,7 @@ impl SemanticAnalyzer {
                         }
                     }
                     BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
-                        if !Self::is_numeric_type(&left_type) {
+                        if !left_type.is_numeric() {
                             self.errors.push(format!(
                                 "算術演算子には数値型が必要ですが {:?} が見つかりました",
                                 left_type
@@ -628,10 +395,13 @@ impl SemanticAnalyzer {
             }
             Expr::UnaryOp { op, operand } => {
                 self.analyze_expr(operand);
-                let ty = self.infer_expr_type(operand);
+                let ty = self.type_map.get(operand);
+                if *ty == Type::Error {
+                    return;
+                }
                 match op {
                     UnaryOp::Neg => {
-                        if !Self::is_numeric_type(&ty) {
+                        if !ty.is_numeric() {
                             self.errors.push(format!(
                                 "単項マイナスには数値型が必要ですが {:?} が見つかりました",
                                 ty
@@ -639,7 +409,7 @@ impl SemanticAnalyzer {
                         }
                     }
                     UnaryOp::Not => {
-                        if ty != Type::Bool {
+                        if *ty != Type::Bool {
                             self.errors.push(format!(
                                 "論理否定には bool 型が必要ですが {:?} が見つかりました",
                                 ty
@@ -653,14 +423,17 @@ impl SemanticAnalyzer {
                 target_type,
             } => {
                 self.analyze_expr(inner);
-                let source_type = self.infer_expr_type(inner);
+                let source_type = self.type_map.get(inner);
+                if *source_type == Type::Error {
+                    return;
+                }
                 // Validate cast
-                if source_type == Type::Unit || *target_type == Type::Unit {
+                if *source_type == Type::Unit || *target_type == Type::Unit {
                     self.errors.push(
                         "() 型へのキャストまたは () 型からのキャストはできません".to_string(),
                     );
-                } else if !(Self::is_numeric_type(&source_type) || source_type == Type::Bool)
-                    || !(Self::is_numeric_type(target_type) || *target_type == Type::Bool)
+                } else if !(source_type.is_numeric() || *source_type == Type::Bool)
+                    || !(target_type.is_numeric() || *target_type == Type::Bool)
                 {
                     self.errors.push(format!(
                         "{:?} から {:?} へのキャストはできません",
@@ -673,7 +446,7 @@ impl SemanticAnalyzer {
                     self.analyze_expr(arg);
                     self.check_expr_has_value(arg);
                 }
-                if let Some(func_info) = self.functions.get(name).cloned() {
+                if let Some(func_info) = self.ctx.functions.get(name) {
                     if args.len() != func_info.param_count {
                         self.errors.push(format!(
                             "{}行目: 関数 '{}' は {} 個の引数を取りますが {} 個渡されました",
@@ -684,8 +457,11 @@ impl SemanticAnalyzer {
                         ));
                     } else {
                         for (i, arg) in args.iter().enumerate() {
-                            let arg_type = self.infer_expr_type(arg);
-                            if arg_type != func_info.param_types[i] {
+                            let arg_type = self.type_map.get(arg);
+                            if *arg_type == Type::Error {
+                                continue;
+                            }
+                            if *arg_type != func_info.param_types[i] {
                                 self.errors.push(format!(
                                     "{}行目: 関数 '{}' の第 {} 引数: {:?} が期待されましたが {:?} が渡されました",
                                     line, name, i + 1, func_info.param_types[i], arg_type
@@ -708,8 +484,8 @@ impl SemanticAnalyzer {
                             line, name
                         ));
                     }
-                    let val_type = self.infer_expr_type(value);
-                    self.check_type_match(&info.var_type, &val_type, *line, "代入");
+                    let val_type = self.type_map.get(value);
+                    self.check_type_match(&info.var_type, val_type, *line, "代入");
                 } else {
                     self.errors
                         .push(format!("{}行目: 未定義の変数 '{}'", line, name));
@@ -721,8 +497,8 @@ impl SemanticAnalyzer {
                 else_block,
             } => {
                 self.analyze_expr(condition);
-                let cond_type = self.infer_expr_type(condition);
-                if cond_type != Type::Bool {
+                let cond_type = self.type_map.get(condition);
+                if *cond_type != Type::Error && *cond_type != Type::Bool {
                     self.errors.push(format!(
                         "if 条件には bool 型が必要ですが {:?} が見つかりました",
                         cond_type
@@ -750,8 +526,8 @@ impl SemanticAnalyzer {
                 body,
             } => {
                 self.analyze_expr(condition);
-                let cond_type = self.infer_expr_type(condition);
-                if cond_type != Type::Bool {
+                let cond_type = self.type_map.get(condition);
+                if *cond_type != Type::Error && *cond_type != Type::Bool {
                     self.errors.push(format!(
                         "while 条件には bool 型が必要ですが {:?} が見つかりました",
                         cond_type
@@ -759,7 +535,6 @@ impl SemanticAnalyzer {
                 }
                 self.loop_stack.push(LoopContext {
                     label: label.clone(),
-                    break_type: None,
                 });
                 self.push_scope();
                 self.analyze_block(body);
@@ -771,7 +546,7 @@ impl SemanticAnalyzer {
                 arms,
             } => {
                 self.analyze_expr(match_expr);
-                let match_type = self.infer_expr_type(match_expr);
+                let match_type = self.type_map.get(match_expr).clone();
 
                 let mut arm_types = Vec::new();
                 for arm in arms {
@@ -779,20 +554,22 @@ impl SemanticAnalyzer {
                     self.push_scope();
                     self.bind_pattern_vars(&arm.pattern, &match_type);
                     self.analyze_expr(&arm.body);
-                    let arm_type = self.infer_expr_type(&arm.body);
+                    let arm_type = self.type_map.get(&arm.body).clone();
                     arm_types.push(arm_type);
                     self.pop_scope();
                 }
 
-                // Check all arms have same type
+                // Check all arms have same type (Type::Error はスキップ)
                 if arm_types.len() >= 2 {
                     let first = &arm_types[0];
-                    for (i, ty) in arm_types.iter().enumerate().skip(1) {
-                        if ty != first {
-                            self.errors.push(format!(
-                                "match アームの型が一致しません: アーム0は {:?} ですがアーム{}は {:?} です",
-                                first, i, ty
-                            ));
+                    if *first != Type::Error {
+                        for (i, ty) in arm_types.iter().enumerate().skip(1) {
+                            if *ty != Type::Error && ty != first {
+                                self.errors.push(format!(
+                                    "match アームの型が一致しません: アーム0は {:?} ですがアーム{}は {:?} です",
+                                    first, i, ty
+                                ));
+                            }
                         }
                     }
                 }
@@ -810,10 +587,13 @@ impl SemanticAnalyzer {
             }
             Expr::FieldAccess { expr: inner, field } => {
                 self.analyze_expr(inner);
-                let base_type = self.infer_expr_type(inner);
-                match &base_type {
+                let base_type = self.type_map.get(inner);
+                if *base_type == Type::Error {
+                    return;
+                }
+                match base_type {
                     Type::Named(name) => {
-                        if let Some(struct_info) = self.structs.get(name) {
+                        if let Some(struct_info) = self.ctx.structs.get(name) {
                             if !struct_info.fields.iter().any(|(fname, _)| fname == field) {
                                 self.errors.push(format!(
                                     "構造体 '{}' にフィールド '{}' はありません",
@@ -837,8 +617,11 @@ impl SemanticAnalyzer {
             }
             Expr::TupleIndex { expr: inner, index } => {
                 self.analyze_expr(inner);
-                let base_type = self.infer_expr_type(inner);
-                if let Type::Tuple(types) = &base_type {
+                let base_type = self.type_map.get(inner);
+                if *base_type == Type::Error {
+                    return;
+                }
+                if let Type::Tuple(types) = base_type {
                     if (*index as usize) >= types.len() {
                         self.errors.push(format!(
                             "タプルのインデックス {} は範囲外です (要素数: {})",
@@ -859,12 +642,12 @@ impl SemanticAnalyzer {
                 }
             }
             Expr::StructExpr { name, fields, line } => {
-                if let Some(struct_info) = self.structs.get(name).cloned() {
+                if let Some(struct_info) = self.ctx.structs.get(name) {
                     // Check all fields are provided
-                    let expected_fields: Vec<String> =
-                        struct_info.fields.iter().map(|(n, _)| n.clone()).collect();
-                    let provided_fields: Vec<String> =
-                        fields.iter().map(|(n, _)| n.clone()).collect();
+                    let expected_fields: Vec<&str> =
+                        struct_info.fields.iter().map(|(n, _)| n.as_str()).collect();
+                    let provided_fields: Vec<&str> =
+                        fields.iter().map(|(n, _)| n.as_str()).collect();
 
                     for ef in &expected_fields {
                         if !provided_fields.contains(ef) {
@@ -889,10 +672,10 @@ impl SemanticAnalyzer {
                         if let Some((_, expected_type)) =
                             struct_info.fields.iter().find(|(n, _)| n == field_name)
                         {
-                            let actual_type = self.infer_expr_type(field_expr);
+                            let actual_type = self.type_map.get(field_expr);
                             self.check_type_match(
                                 expected_type,
-                                &actual_type,
+                                actual_type,
                                 *line,
                                 &format!("構造体フィールド '{}'", field_name),
                             );
@@ -909,11 +692,11 @@ impl SemanticAnalyzer {
                 args,
                 line,
             } => {
-                if let Some(enum_info) = self.enums.get(enum_name).cloned() {
+                if let Some(enum_info) = self.ctx.enums.get(enum_name) {
                     if let Some((_, variant_info)) =
                         enum_info.variants.iter().find(|(n, _)| n == variant)
                     {
-                        match (&variant_info, args) {
+                        match (variant_info, args) {
                             (VariantInfo::Unit, EnumArgs::Unit) => {}
                             (VariantInfo::Tuple(expected_types), EnumArgs::Tuple(exprs)) => {
                                 if exprs.len() != expected_types.len() {
@@ -924,10 +707,10 @@ impl SemanticAnalyzer {
                                 } else {
                                     for (i, expr) in exprs.iter().enumerate() {
                                         self.analyze_expr(expr);
-                                        let actual = self.infer_expr_type(expr);
+                                        let actual = self.type_map.get(expr);
                                         self.check_type_match(
                                             &expected_types[i],
-                                            &actual,
+                                            actual,
                                             *line,
                                             &format!("enum バリアント引数 {}", i),
                                         );
@@ -940,10 +723,10 @@ impl SemanticAnalyzer {
                                     if let Some((_, expected_type)) =
                                         expected_fields.iter().find(|(n, _)| n == field_name)
                                     {
-                                        let actual = self.infer_expr_type(field_expr);
+                                        let actual = self.type_map.get(field_expr);
                                         self.check_type_match(
                                             expected_type,
-                                            &actual,
+                                            actual,
                                             *line,
                                             &format!("enum フィールド '{}'", field_name),
                                         );
@@ -974,7 +757,7 @@ impl SemanticAnalyzer {
     fn analyze_pattern(&mut self, pattern: &Pattern, expected_type: &Type) {
         match pattern {
             Pattern::IntLiteral(_) | Pattern::Range { .. } => {
-                if !Self::is_integer_type(expected_type) {
+                if !expected_type.is_integer() {
                     self.errors.push(format!(
                         "整数パターンは整数型に対してのみ使用できます (型: {:?})",
                         expected_type
@@ -1017,7 +800,7 @@ impl SemanticAnalyzer {
                             "構造体パターン '{}' は型 '{:?}' と一致しません",
                             name, expected_type
                         ));
-                    } else if let Some(struct_info) = self.structs.get(name).cloned() {
+                    } else if let Some(struct_info) = self.ctx.structs.get(name) {
                         for (field_name, field_pat) in fields {
                             if let Some((_, field_type)) =
                                 struct_info.fields.iter().find(|(n, _)| n == field_name)
@@ -1044,11 +827,11 @@ impl SemanticAnalyzer {
                             "enum パターン '{}' は型 '{:?}' と一致しません",
                             enum_name, expected_type
                         ));
-                    } else if let Some(enum_info) = self.enums.get(enum_name).cloned() {
+                    } else if let Some(enum_info) = self.ctx.enums.get(enum_name) {
                         if let Some((_, variant_info)) =
                             enum_info.variants.iter().find(|(n, _)| n == variant)
                         {
-                            match (&variant_info, args) {
+                            match (variant_info, args) {
                                 (VariantInfo::Unit, EnumPatternArgs::Unit) => {}
                                 (VariantInfo::Tuple(types), EnumPatternArgs::Tuple(pats)) => {
                                     if pats.len() != types.len() {
@@ -1094,57 +877,9 @@ impl SemanticAnalyzer {
     }
 
     fn bind_pattern_vars(&mut self, pattern: &Pattern, ty: &Type) {
-        match pattern {
-            Pattern::Binding(name) => {
-                self.define_var(name, false, ty.clone(), 0);
-            }
-            Pattern::Tuple(patterns) => {
-                if let Type::Tuple(types) = ty {
-                    for (pat, t) in patterns.iter().zip(types.iter()) {
-                        self.bind_pattern_vars(pat, t);
-                    }
-                }
-            }
-            Pattern::Struct { name, fields } => {
-                if let Some(struct_info) = self.structs.get(name).cloned() {
-                    for (field_name, field_pat) in fields {
-                        if let Some((_, field_type)) =
-                            struct_info.fields.iter().find(|(n, _)| n == field_name)
-                        {
-                            self.bind_pattern_vars(field_pat, field_type);
-                        }
-                    }
-                }
-            }
-            Pattern::Enum {
-                enum_name,
-                variant,
-                args,
-            } => {
-                if let Some(enum_info) = self.enums.get(enum_name).cloned()
-                    && let Some((_, variant_info)) =
-                        enum_info.variants.iter().find(|(n, _)| n == variant)
-                {
-                    match (&variant_info, args) {
-                        (VariantInfo::Tuple(types), EnumPatternArgs::Tuple(pats)) => {
-                            for (pat, t) in pats.iter().zip(types.iter()) {
-                                self.bind_pattern_vars(pat, t);
-                            }
-                        }
-                        (VariantInfo::Struct(fields), EnumPatternArgs::Struct(pat_fields)) => {
-                            for (field_name, field_pat) in pat_fields {
-                                if let Some((_, field_type)) =
-                                    fields.iter().find(|(n, _)| n == field_name)
-                                {
-                                    self.bind_pattern_vars(field_pat, field_type);
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            _ => {}
+        let bindings = collect_pattern_bindings(self.ctx, pattern, ty);
+        for (name, var_type) in bindings {
+            self.define_var(&name, false, var_type, 0);
         }
     }
 
@@ -1173,14 +908,14 @@ impl SemanticAnalyzer {
                 }
             }
             Type::Named(name) => {
-                if let Some(enum_info) = self.enums.get(name).cloned() {
-                    let all_variants: Vec<String> =
-                        enum_info.variants.iter().map(|(n, _)| n.clone()).collect();
-                    let covered_variants: Vec<String> = patterns
+                if let Some(enum_info) = self.ctx.enums.get(name) {
+                    let all_variants: Vec<&str> =
+                        enum_info.variants.iter().map(|(n, _)| n.as_str()).collect();
+                    let covered_variants: Vec<&str> = patterns
                         .iter()
                         .filter_map(|p| {
                             if let Pattern::Enum { variant, .. } = p {
-                                Some(variant.clone())
+                                Some(variant.as_str())
                             } else {
                                 None
                             }
@@ -1196,7 +931,7 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            _ if Self::is_integer_type(match_type) => {
+            _ if match_type.is_integer() => {
                 // Integer types require a wildcard/binding pattern
                 self.errors.push(
                     "match 式が網羅的ではありません: 整数型にはワイルドカード '_' パターンが必要です"
@@ -1204,62 +939,6 @@ impl SemanticAnalyzer {
                 );
             }
             _ => {}
-        }
-    }
-
-    fn find_break_value_type_in_block(&self, block: &Block) -> Option<Type> {
-        for stmt in &block.stmts {
-            match stmt {
-                Stmt::Break {
-                    value: Some(expr), ..
-                } => {
-                    return Some(self.infer_expr_type(expr));
-                }
-                Stmt::Expr(expr) => {
-                    if let Some(ty) = self.find_break_value_type_in_expr(expr) {
-                        return Some(ty);
-                    }
-                }
-                _ => {}
-            }
-        }
-        if let Some(expr) = &block.expr
-            && let Some(ty) = self.find_break_value_type_in_expr(expr)
-        {
-            return Some(ty);
-        }
-        None
-    }
-
-    fn find_break_value_type_in_expr(&self, expr: &Expr) -> Option<Type> {
-        match expr {
-            Expr::If {
-                then_block,
-                else_block,
-                ..
-            } => {
-                if let Some(ty) = self.find_break_value_type_in_block(then_block) {
-                    return Some(ty);
-                }
-                if let Some(else_clause) = else_block {
-                    match else_clause.as_ref() {
-                        ElseClause::ElseBlock(block) => {
-                            if let Some(ty) = self.find_break_value_type_in_block(block) {
-                                return Some(ty);
-                            }
-                        }
-                        ElseClause::ElseIf(expr) => {
-                            if let Some(ty) = self.find_break_value_type_in_expr(expr) {
-                                return Some(ty);
-                            }
-                        }
-                    }
-                }
-                None
-            }
-            Expr::Block(block) => self.find_break_value_type_in_block(block),
-            // Don't recurse into inner while loops (their breaks belong to them)
-            _ => None,
         }
     }
 
@@ -1312,13 +991,17 @@ mod tests {
     use super::*;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
+    use crate::type_context::TypeContext;
+    use crate::type_resolver::TypeResolver;
 
     fn analyze(source: &str) -> Result<(), Vec<String>> {
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
         let program = parser.parse_program().unwrap();
-        let mut analyzer = SemanticAnalyzer::new();
+        let type_ctx = TypeContext::build(&program).map_err(|e| e)?;
+        let type_map = TypeResolver::new(&type_ctx).resolve(&program);
+        let mut analyzer = SemanticAnalyzer::new(&type_ctx, &type_map);
         analyzer.analyze(&program)
     }
 
@@ -1412,7 +1095,7 @@ mod tests {
     }
 
     #[test]
-    fn variable_scope_inner() {
+    fn undefined_variable_from_inner_scope() {
         let errors = analyze_errors(
             "fn main() -> i32 {
                 if true { let y: i32 = 1; y; }
@@ -1528,5 +1211,263 @@ mod tests {
     #[test]
     fn valid_bool_type() {
         assert!(analyze("fn main() -> i32 { let b: bool = true; if b { 1 } else { 0 } }").is_ok());
+    }
+
+    // 型推論エッジケーステスト
+
+    #[test]
+    fn valid_nested_struct_field_access() {
+        assert!(
+            analyze(
+                "struct Inner { value: i32 }
+                 struct Outer { inner: Inner }
+                 fn main() -> i32 {
+                     let o = Outer { inner: Inner { value: 42 } };
+                     o.inner.value
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_match_arm_type_consistency() {
+        assert!(
+            analyze(
+                "fn main() -> i32 {
+                     let x: i32 = 1;
+                     match x {
+                         0 => 10,
+                         1 => 20,
+                         _ => 30,
+                     }
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn match_arm_type_mismatch() {
+        let errors = analyze_errors(
+            "fn main() -> i32 {
+                 let x: i32 = 1;
+                 match x {
+                     0 => 10,
+                     1 => true,
+                     _ => 30,
+                 }
+             }",
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("match アームの型が一致しません"))
+        );
+    }
+
+    #[test]
+    fn valid_while_break_value() {
+        assert!(
+            analyze(
+                "fn main() -> i32 {
+                     let mut i: i32 = 0;
+                     while i < 10 {
+                         i = i + 1;
+                         if i == 5 {
+                             break 42;
+                         }
+                     }
+                     0
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_if_else_type_inference() {
+        assert!(
+            analyze(
+                "fn main() -> i32 {
+                     let x: i32 = if true { 1 } else { 2 };
+                     x
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_if_else_i64_type_inference() {
+        assert!(
+            analyze(
+                "fn main() -> i64 {
+                     if false { 100i64 } else { 200i64 }
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_block_tail_expression() {
+        assert!(
+            analyze(
+                "fn main() -> i32 {
+                     let x: i32 = {
+                         let a: i32 = 1;
+                         let b: i32 = 2;
+                         a + b
+                     };
+                     x
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_nested_block_tail_expression() {
+        assert!(
+            analyze(
+                "fn main() -> i32 {
+                     {
+                         {
+                             42
+                         }
+                     }
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_recursive_function() {
+        assert!(
+            analyze(
+                "fn factorial(n: i32) -> i32 {
+                     if n == 0 {
+                         1
+                     } else {
+                         n * factorial(n - 1)
+                     }
+                 }
+                 fn main() -> i32 {
+                     factorial(5)
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_mutual_recursion() {
+        assert!(
+            analyze(
+                "fn is_even(n: i32) -> i32 {
+                     if n == 0 { 1 } else { is_odd(n - 1) }
+                 }
+                 fn is_odd(n: i32) -> i32 {
+                     if n == 0 { 0 } else { is_even(n - 1) }
+                 }
+                 fn main() -> i32 {
+                     is_even(4)
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_match_enum_type_inference() {
+        assert!(
+            analyze(
+                "enum Option { Some(i32), None }
+                 fn main() -> i32 {
+                     let opt = Option::Some(42);
+                     match opt {
+                         Option::Some(v) => v,
+                         Option::None => 0,
+                     }
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_match_bool_exhaustive() {
+        assert!(
+            analyze(
+                "fn main() -> i32 {
+                     let b: bool = true;
+                     match b {
+                         true => 1,
+                         false => 0,
+                     }
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn valid_struct_in_function_param() {
+        assert!(
+            analyze(
+                "struct Point { x: i32, y: i32 }
+                 fn sum(p: Point) -> i32 {
+                     p.x + p.y
+                 }
+                 fn main() -> i32 {
+                     let p = Point { x: 10, y: 20 };
+                     sum(p)
+                 }"
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn type_mismatch_return_if_else_branches() {
+        let errors = analyze_errors(
+            "fn main() -> i64 {
+                 if true { 1 } else { 2i64 }
+             }",
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("期待されましたが") || e.contains("戻り値"))
+        );
+    }
+
+    #[test]
+    fn type_mismatch_return_type() {
+        let errors = analyze_errors(
+            "fn main() -> i32 {
+                 true
+             }",
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("期待されましたが") || e.contains("戻り値"))
+        );
+    }
+
+    #[test]
+    fn valid_tuple_type_inference() {
+        assert!(
+            analyze(
+                "fn main() -> i32 {
+                     let t = (1, 2);
+                     t.0 + t.1
+                 }"
+            )
+            .is_ok()
+        );
     }
 }

@@ -4,6 +4,8 @@ mod lexer;
 mod parser;
 mod semantic;
 mod token;
+mod type_context;
+mod type_resolver;
 
 use inkwell::context::Context;
 use std::env;
@@ -66,8 +68,22 @@ fn main() {
         }
     };
 
+    // Type context (register structs, enums, functions)
+    let type_ctx = match type_context::TypeContext::build(&program) {
+        Ok(ctx) => ctx,
+        Err(errors) => {
+            for e in &errors {
+                eprintln!("意味解析エラー: {}", e);
+            }
+            std::process::exit(1);
+        }
+    };
+
+    // Type resolution (infer types for all expressions)
+    let type_map = type_resolver::TypeResolver::new(&type_ctx).resolve(&program);
+
     // Semantic analysis
-    let mut analyzer = semantic::SemanticAnalyzer::new();
+    let mut analyzer = semantic::SemanticAnalyzer::new(&type_ctx, &type_map);
     if let Err(errors) = analyzer.analyze(&program) {
         for e in &errors {
             eprintln!("意味解析エラー: {}", e);
@@ -77,8 +93,11 @@ fn main() {
 
     // Code generation (Cz -> LLVM IR via inkwell)
     let context = Context::create();
-    let mut codegen = codegen::CodeGen::new(&context);
-    codegen.generate(&program);
+    let mut codegen = codegen::CodeGen::new(&context, &type_map);
+    if let Err(e) = codegen.generate(&program) {
+        eprintln!("コード生成エラー: {}", e);
+        std::process::exit(1);
+    }
 
     if emit_llvm {
         println!("{}", codegen.print_to_string());

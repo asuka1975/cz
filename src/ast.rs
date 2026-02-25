@@ -36,6 +36,22 @@ pub enum Type {
     Unit,
     Tuple(Vec<Type>),
     Named(String),
+    /// 型推論に失敗した場合のエラー型。カスケードエラー防止に使用する。
+    Error,
+}
+
+impl Type {
+    pub fn is_integer(&self) -> bool {
+        matches!(self, Type::I8 | Type::I16 | Type::I32 | Type::I64)
+    }
+
+    pub fn is_float(&self) -> bool {
+        matches!(self, Type::F32 | Type::F64)
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        self.is_integer() || self.is_float()
+    }
 }
 
 #[derive(Debug)]
