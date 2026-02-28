@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::token::{FloatSuffix, IntSuffix};
+use crate::type_context::TypeMap;
 use inkwell::AddressSpace;
 use inkwell::FloatPredicate;
 use inkwell::IntPredicate;
@@ -15,6 +16,37 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, Poi
 use std::collections::HashMap;
 use std::path::Path;
 
+#[derive(Debug)]
+pub enum CodeGenError {
+    UndefinedType(String),
+    UndefinedVariable(String),
+    UndefinedFunction(String),
+    FieldNotFound { struct_name: String, field: String },
+    NotAStructType(String),
+    LabelNotFound(String),
+}
+
+impl std::fmt::Display for CodeGenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UndefinedType(name) => write!(f, "codegen: 未定義の型: {}", name),
+            Self::UndefinedVariable(name) => write!(f, "codegen: 未定義の変数: {}", name),
+            Self::UndefinedFunction(name) => write!(f, "codegen: 未定義の関数: {}", name),
+            Self::FieldNotFound { struct_name, field } => {
+                write!(
+                    f,
+                    "codegen: 構造体 '{}' にフィールド '{}' が見つかりません",
+                    struct_name, field
+                )
+            }
+            Self::NotAStructType(ty) => {
+                write!(f, "codegen: 構造体でない型へのフィールドアクセス: {}", ty)
+            }
+            Self::LabelNotFound(label) => write!(f, "codegen: ラベル '{}' が見つかりません", label),
+        }
+    }
+}
+
 struct LoopInfo<'ctx> {
     break_bb: inkwell::basic_block::BasicBlock<'ctx>,
     cond_bb: inkwell::basic_block::BasicBlock<'ctx>,
@@ -22,10 +54,11 @@ struct LoopInfo<'ctx> {
     label: Option<String>,
 }
 
-pub struct CodeGen<'ctx> {
+pub struct CodeGen<'ctx, 'tm> {
     context: &'ctx Context,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
+    type_map: &'tm TypeMap,
     vars: Vec<HashMap<String, (PointerValue<'ctx>, Type)>>,
     printf_fn: FunctionValue<'ctx>,
     exit_fn: FunctionValue<'ctx>,
@@ -35,8 +68,8 @@ pub struct CodeGen<'ctx> {
     loop_stack: Vec<LoopInfo<'ctx>>,
 }
 
-impl<'ctx> CodeGen<'ctx> {
-    pub fn new(context: &'ctx Context) -> Self {
+impl<'ctx, 'tm> CodeGen<'ctx, 'tm> {
+    pub fn new(context: &'ctx Context, type_map: &'tm TypeMap) -> Self {
         let module = context.create_module("czc");
         let builder = context.create_builder();
 
@@ -62,6 +95,7 @@ impl<'ctx> CodeGen<'ctx> {
             context,
             module,
             builder,
+            type_map,
             vars: Vec::new(),
             printf_fn,
             exit_fn,
@@ -72,14 +106,13 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    pub fn generate(&mut self, program: &Program) {
+    pub fn generate(&mut self, program: &Program) -> Result<(), CodeGenError> {
         // Register struct types
         for s in &program.structs {
-            let field_types: Vec<BasicTypeEnum> = s
-                .fields
-                .iter()
-                .map(|f| self.llvm_type(&f.field_type))
-                .collect();
+            let mut field_types: Vec<BasicTypeEnum> = Vec::new();
+            for f in &s.fields {
+                field_types.push(self.llvm_type(&f.field_type)?);
+            }
             let struct_type = self.context.opaque_struct_type(&format!("cz.{}", s.name));
             struct_type.set_body(&field_types, false);
             self.struct_types.insert(
@@ -130,16 +163,15 @@ impl<'ctx> CodeGen<'ctx> {
         for func in &program.functions {
             let c_name = Self::mangle(&func.name);
             if self.module.get_function(&c_name).is_none() {
-                let param_types: Vec<BasicMetadataTypeEnum> = func
-                    .params
-                    .iter()
-                    .map(|p| self.llvm_type(&p.param_type).into())
-                    .collect();
+                let mut param_types: Vec<BasicMetadataTypeEnum> = Vec::new();
+                for p in &func.params {
+                    param_types.push(self.llvm_type(&p.param_type)?.into());
+                }
                 if func.return_type == Type::Unit {
                     let fn_type = self.context.void_type().fn_type(&param_types, false);
                     self.module.add_function(&c_name, fn_type, None);
                 } else {
-                    let ret_type = self.llvm_type(&func.return_type);
+                    let ret_type = self.llvm_type(&func.return_type)?;
                     let fn_type = ret_type.fn_type(&param_types, false);
                     self.module.add_function(&c_name, fn_type, None);
                 }
@@ -148,8 +180,10 @@ impl<'ctx> CodeGen<'ctx> {
 
         // Pass 2: Generate function bodies
         for func in &program.functions {
-            self.emit_function(func);
+            self.emit_function(func)?;
         }
+
+        Ok(())
     }
 
     fn generate_print_functions(&mut self) {
@@ -172,7 +206,8 @@ impl<'ctx> CodeGen<'ctx> {
             fmt_global.set_constant(true);
             fmt_global.set_linkage(Linkage::Private);
 
-            let llvm_param_type = self.llvm_type(param_type);
+            // These are always primitive types, so llvm_type cannot fail
+            let llvm_param_type = self.llvm_type(param_type).unwrap();
             let fn_type = self
                 .context
                 .void_type()
@@ -309,28 +344,31 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn llvm_type(&self, ty: &Type) -> BasicTypeEnum<'ctx> {
+    fn llvm_type(&self, ty: &Type) -> Result<BasicTypeEnum<'ctx>, CodeGenError> {
         match ty {
-            Type::I8 => self.context.i8_type().into(),
-            Type::I16 => self.context.i16_type().into(),
-            Type::I32 => self.context.i32_type().into(),
-            Type::I64 => self.context.i64_type().into(),
-            Type::F32 => self.context.f32_type().into(),
-            Type::F64 => self.context.f64_type().into(),
-            Type::Bool => self.context.bool_type().into(),
-            Type::Unit => self.context.struct_type(&[], false).into(),
+            Type::I8 => Ok(self.context.i8_type().into()),
+            Type::I16 => Ok(self.context.i16_type().into()),
+            Type::I32 => Ok(self.context.i32_type().into()),
+            Type::I64 => Ok(self.context.i64_type().into()),
+            Type::F32 => Ok(self.context.f32_type().into()),
+            Type::F64 => Ok(self.context.f64_type().into()),
+            Type::Bool => Ok(self.context.bool_type().into()),
+            Type::Unit => Ok(self.context.struct_type(&[], false).into()),
             Type::Tuple(types) => {
-                let field_types: Vec<BasicTypeEnum> =
-                    types.iter().map(|t| self.llvm_type(t)).collect();
-                self.context.struct_type(&field_types, false).into()
+                let mut field_types: Vec<BasicTypeEnum> = Vec::new();
+                for t in types {
+                    field_types.push(self.llvm_type(t)?);
+                }
+                Ok(self.context.struct_type(&field_types, false).into())
             }
             Type::Named(name) => {
                 if let Some(struct_type) = self.module.get_struct_type(&format!("cz.{}", name)) {
-                    struct_type.into()
+                    Ok(struct_type.into())
                 } else {
-                    panic!("codegen: undefined type: {}", name);
+                    Err(CodeGenError::UndefinedType(name.clone()))
                 }
             }
+            Type::Error => unreachable!("Type::Error reached codegen"),
         }
     }
 
@@ -366,145 +404,7 @@ impl<'ctx> CodeGen<'ctx> {
                     0
                 }
             }
-        }
-    }
-
-    fn infer_type(&self, expr: &Expr) -> Type {
-        match expr {
-            Expr::IntegerLiteral { suffix, .. } => match suffix {
-                Some(IntSuffix::I8) => Type::I8,
-                Some(IntSuffix::I16) => Type::I16,
-                Some(IntSuffix::I32) => Type::I32,
-                Some(IntSuffix::I64) => Type::I64,
-                None => Type::I32,
-            },
-            Expr::FloatLiteral { suffix, .. } => match suffix {
-                Some(FloatSuffix::F32) => Type::F32,
-                Some(FloatSuffix::F64) => Type::F64,
-                None => Type::F64,
-            },
-            Expr::BoolLiteral(_) => Type::Bool,
-            Expr::UnitLiteral => Type::Unit,
-            Expr::Identifier(name, _) => {
-                for scope in self.vars.iter().rev() {
-                    if let Some((_, ty)) = scope.get(name) {
-                        return ty.clone();
-                    }
-                }
-                Type::I32
-            }
-            Expr::BinaryOp { op, left, .. } => match op {
-                BinOp::Eq
-                | BinOp::NotEq
-                | BinOp::Lt
-                | BinOp::Gt
-                | BinOp::LtEq
-                | BinOp::GtEq
-                | BinOp::And
-                | BinOp::Or => Type::Bool,
-                _ => self.infer_type(left),
-            },
-            Expr::UnaryOp { op, operand } => match op {
-                UnaryOp::Neg => self.infer_type(operand),
-                UnaryOp::Not => Type::Bool,
-            },
-            Expr::Cast { target_type, .. } => target_type.clone(),
-            Expr::Call { name, .. } => {
-                let c_name = Self::mangle(name);
-                if let Some(func) = self.module.get_function(&c_name) {
-                    if func.get_type().get_return_type().is_none() {
-                        Type::Unit
-                    } else {
-                        // Try to match return type
-                        self.llvm_type_to_type(func.get_type().get_return_type().unwrap())
-                    }
-                } else {
-                    Type::I32
-                }
-            }
-            Expr::Assign { .. } => Type::Unit,
-            Expr::If {
-                then_block,
-                else_block,
-                ..
-            } => {
-                if else_block.is_some() {
-                    if let Some(tail) = &then_block.expr {
-                        self.infer_type(tail)
-                    } else {
-                        Type::Unit
-                    }
-                } else {
-                    Type::Unit
-                }
-            }
-            Expr::While { body, .. } => {
-                if let Some(ty) = self.find_break_value_type_in_block(body) {
-                    ty
-                } else {
-                    Type::Unit
-                }
-            }
-            Expr::Match { arms, .. } => {
-                if let Some(first) = arms.first() {
-                    self.infer_type(&first.body)
-                } else {
-                    Type::Unit
-                }
-            }
-            Expr::Block(block) => {
-                if let Some(tail) = &block.expr {
-                    self.infer_type(tail)
-                } else {
-                    Type::Unit
-                }
-            }
-            Expr::FieldAccess { expr, field } => {
-                let base = self.infer_type(expr);
-                if let Type::Named(name) = &base
-                    && let Some(fields) = self.struct_types.get(name)
-                {
-                    for (fname, ftype) in fields {
-                        if fname == field {
-                            return ftype.clone();
-                        }
-                    }
-                }
-                Type::I32
-            }
-            Expr::TupleIndex { expr, index } => {
-                let base = self.infer_type(expr);
-                if let Type::Tuple(types) = &base
-                    && (*index as usize) < types.len()
-                {
-                    return types[*index as usize].clone();
-                }
-                Type::I32
-            }
-            Expr::TupleExpr(elems) => {
-                Type::Tuple(elems.iter().map(|e| self.infer_type(e)).collect())
-            }
-            Expr::StructExpr { name, .. } => Type::Named(name.clone()),
-            Expr::EnumExpr { enum_name, .. } => Type::Named(enum_name.clone()),
-        }
-    }
-
-    fn llvm_type_to_type(&self, ty: BasicTypeEnum<'ctx>) -> Type {
-        if ty.is_int_type() {
-            let width = ty.into_int_type().get_bit_width();
-            match width {
-                1 => Type::Bool,
-                8 => Type::I8,
-                16 => Type::I16,
-                32 => Type::I32,
-                64 => Type::I64,
-                _ => Type::I32,
-            }
-        } else if ty.is_float_type() {
-            // F32 or F64
-            Type::F64
-        } else {
-            Type::I32
+            Type::Error => unreachable!("Type::Error reached codegen"),
         }
     }
 
@@ -522,13 +422,13 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn lookup_var(&self, name: &str) -> (PointerValue<'ctx>, Type) {
+    fn lookup_var(&self, name: &str) -> Result<(PointerValue<'ctx>, Type), CodeGenError> {
         for scope in self.vars.iter().rev() {
             if let Some(entry) = scope.get(name) {
-                return entry.clone();
+                return Ok(entry.clone());
             }
         }
-        panic!("codegen: undefined variable: {}", name);
+        Err(CodeGenError::UndefinedVariable(name.to_string()))
     }
 
     fn current_function(&self) -> FunctionValue<'ctx> {
@@ -539,17 +439,9 @@ impl<'ctx> CodeGen<'ctx> {
             .unwrap()
     }
 
-    fn is_float_type(ty: &Type) -> bool {
-        matches!(ty, Type::F32 | Type::F64)
-    }
-
-    fn is_integer_type(ty: &Type) -> bool {
-        matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64)
-    }
-
     // --- Function/Block Emission ---
 
-    fn emit_function(&mut self, func: &FunctionDef) {
+    fn emit_function(&mut self, func: &FunctionDef) -> Result<(), CodeGenError> {
         self.vars.clear();
 
         let c_name = Self::mangle(&func.name);
@@ -562,19 +454,24 @@ impl<'ctx> CodeGen<'ctx> {
 
         for (i, param) in func.params.iter().enumerate() {
             let param_val = fn_value.get_nth_param(i as u32).unwrap();
-            let llvm_ty = self.llvm_type(&param.param_type);
+            let llvm_ty = self.llvm_type(&param.param_type)?;
             let alloca = self.builder.build_alloca(llvm_ty, &param.name).unwrap();
             self.builder.build_store(alloca, param_val).unwrap();
             self.define_var(&param.name, alloca, param.param_type.clone());
         }
 
-        self.emit_block_as_return(&func.body, &func.return_type);
+        self.emit_block_as_return(&func.body, &func.return_type)?;
         self.pop_scope();
+        Ok(())
     }
 
-    fn emit_block_as_return(&mut self, block: &Block, return_type: &Type) {
+    fn emit_block_as_return(
+        &mut self,
+        block: &Block,
+        return_type: &Type,
+    ) -> Result<(), CodeGenError> {
         for stmt in &block.stmts {
-            self.emit_stmt(stmt);
+            self.emit_stmt(stmt)?;
             // Check if we already emitted a terminator (return/break/continue)
             if self
                 .builder
@@ -592,13 +489,13 @@ impl<'ctx> CodeGen<'ctx> {
         }
         if let Some(expr) = &block.expr {
             if *return_type == Type::Unit {
-                self.emit_expr(expr);
+                self.emit_expr(expr)?;
                 let current_block = self.builder.get_insert_block().unwrap();
                 if current_block.get_terminator().is_none() {
                     self.builder.build_return(None).unwrap();
                 }
             } else {
-                let val = self.emit_expr(expr);
+                let val = self.emit_expr(expr)?;
                 let current_block = self.builder.get_insert_block().unwrap();
                 if current_block.get_terminator().is_none() {
                     self.builder.build_return(Some(&val)).unwrap();
@@ -613,12 +510,13 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.build_unreachable().unwrap();
             }
         }
+        Ok(())
     }
 
-    fn emit_block_value(&mut self, block: &Block) -> BasicValueEnum<'ctx> {
+    fn emit_block_value(&mut self, block: &Block) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
         self.push_scope();
         for stmt in &block.stmts {
-            self.emit_stmt(stmt);
+            self.emit_stmt(stmt)?;
             if self
                 .builder
                 .get_insert_block()
@@ -632,12 +530,12 @@ impl<'ctx> CodeGen<'ctx> {
             }
         }
         let val = if let Some(expr) = &block.expr {
-            self.emit_expr(expr)
+            self.emit_expr(expr)?
         } else {
             self.unit_value()
         };
         self.pop_scope();
-        val
+        Ok(val)
     }
 
     fn unit_value(&self) -> BasicValueEnum<'ctx> {
@@ -649,7 +547,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     // --- Statement Emission ---
 
-    fn emit_stmt(&mut self, stmt: &Stmt) {
+    fn emit_stmt(&mut self, stmt: &Stmt) -> Result<(), CodeGenError> {
         match stmt {
             Stmt::Let {
                 name,
@@ -657,20 +555,20 @@ impl<'ctx> CodeGen<'ctx> {
                 init,
                 ..
             } => {
-                let val = self.emit_expr(init);
+                let val = self.emit_expr(init)?;
                 let ty = if let Some(declared_type) = var_type {
                     declared_type.clone()
                 } else {
-                    self.infer_type(init)
+                    self.type_map.get(init).clone()
                 };
-                let llvm_ty = self.llvm_type(&ty);
+                let llvm_ty = self.llvm_type(&ty)?;
                 let alloca = self.builder.build_alloca(llvm_ty, name).unwrap();
                 self.builder.build_store(alloca, val).unwrap();
                 self.define_var(name, alloca, ty);
             }
             Stmt::Return { value, .. } => {
                 if let Some(val_expr) = value {
-                    let val = self.emit_expr(val_expr);
+                    let val = self.emit_expr(val_expr)?;
                     self.builder.build_return(Some(&val)).unwrap();
                 } else {
                     self.builder.build_return(None).unwrap();
@@ -684,13 +582,13 @@ impl<'ctx> CodeGen<'ctx> {
                     self.loop_stack
                         .iter()
                         .rposition(|l| l.label.as_deref() == Some(label_name))
-                        .expect("codegen: label not found")
+                        .ok_or_else(|| CodeGenError::LabelNotFound(label_name.clone()))?
                 } else {
                     self.loop_stack.len() - 1
                 };
 
                 if let Some(val_expr) = value {
-                    let val = self.emit_expr(val_expr);
+                    let val = self.emit_expr(val_expr)?;
                     if let Some(result_addr) = self.loop_stack[loop_info_idx].result_addr {
                         self.builder.build_store(result_addr, val).unwrap();
                     }
@@ -708,7 +606,7 @@ impl<'ctx> CodeGen<'ctx> {
                     self.loop_stack
                         .iter()
                         .rposition(|l| l.label.as_deref() == Some(label_name))
-                        .expect("codegen: label not found")
+                        .ok_or_else(|| CodeGenError::LabelNotFound(label_name.clone()))?
                 } else {
                     self.loop_stack.len() - 1
                 };
@@ -723,14 +621,15 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.position_at_end(after_bb);
             }
             Stmt::Expr(expr) => {
-                self.emit_expr(expr);
+                self.emit_expr(expr)?;
             }
         }
+        Ok(())
     }
 
     // --- Expression Emission ---
 
-    fn emit_expr(&mut self, expr: &Expr) -> BasicValueEnum<'ctx> {
+    fn emit_expr(&mut self, expr: &Expr) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
         match expr {
             Expr::IntegerLiteral { value, suffix } => {
                 let ty = match suffix {
@@ -740,7 +639,7 @@ impl<'ctx> CodeGen<'ctx> {
                     Some(IntSuffix::I64) => self.context.i64_type(),
                     None => self.context.i32_type(),
                 };
-                ty.const_int(*value as u64, true).into()
+                Ok(ty.const_int(*value as u64, true).into())
             }
             Expr::FloatLiteral { value, suffix } => {
                 let ty = match suffix {
@@ -748,50 +647,52 @@ impl<'ctx> CodeGen<'ctx> {
                     Some(FloatSuffix::F64) => self.context.f64_type(),
                     None => self.context.f64_type(),
                 };
-                ty.const_float(*value).into()
+                Ok(ty.const_float(*value).into())
             }
-            Expr::BoolLiteral(b) => self
+            Expr::BoolLiteral(b) => Ok(self
                 .context
                 .bool_type()
                 .const_int(if *b { 1 } else { 0 }, false)
-                .into(),
-            Expr::UnitLiteral => self.unit_value(),
+                .into()),
+            Expr::UnitLiteral => Ok(self.unit_value()),
             Expr::Identifier(name, _) => {
-                let (addr, ty) = self.lookup_var(name);
-                let llvm_ty = self.llvm_type(&ty);
-                self.builder.build_load(llvm_ty, addr, name).unwrap()
+                let (addr, ty) = self.lookup_var(name)?;
+                let llvm_ty = self.llvm_type(&ty)?;
+                Ok(self.builder.build_load(llvm_ty, addr, name).unwrap())
             }
             Expr::BinaryOp { op, left, right } => match op {
                 BinOp::And => self.emit_and(left, right),
                 BinOp::Or => self.emit_or(left, right),
                 BinOp::Div | BinOp::Mod => self.emit_div_mod(left, right, *op),
                 _ => {
-                    let lval = self.emit_expr(left);
-                    let rval = self.emit_expr(right);
-                    let ty = self.infer_type(left);
-                    self.emit_binop(*op, lval, rval, &ty)
+                    let lval = self.emit_expr(left)?;
+                    let rval = self.emit_expr(right)?;
+                    let ty = self.type_map.get(left);
+                    self.emit_binop(*op, lval, rval, ty)
                 }
             },
             Expr::UnaryOp { op, operand } => {
-                let val = self.emit_expr(operand);
-                let ty = self.infer_type(operand);
+                let val = self.emit_expr(operand)?;
+                let ty = self.type_map.get(operand);
                 match op {
                     UnaryOp::Neg => {
-                        if Self::is_float_type(&ty) {
-                            self.builder
+                        if ty.is_float() {
+                            Ok(self
+                                .builder
                                 .build_float_neg(val.into_float_value(), "fneg")
                                 .unwrap()
-                                .into()
+                                .into())
                         } else {
-                            self.builder
+                            Ok(self
+                                .builder
                                 .build_int_neg(val.into_int_value(), "neg")
                                 .unwrap()
-                                .into()
+                                .into())
                         }
                     }
                     UnaryOp::Not => {
                         let bool_val = val.into_int_value();
-                        self.builder.build_not(bool_val, "not").unwrap().into()
+                        Ok(self.builder.build_not(bool_val, "not").unwrap().into())
                     }
                 }
             }
@@ -799,33 +700,35 @@ impl<'ctx> CodeGen<'ctx> {
                 expr: inner,
                 target_type,
             } => {
-                let val = self.emit_expr(inner);
-                let source_type = self.infer_type(inner);
-                self.emit_cast(val, &source_type, target_type)
+                let val = self.emit_expr(inner)?;
+                let source_type = self.type_map.get(inner);
+                self.emit_cast(val, source_type, target_type)
             }
             Expr::Call { name, args, .. } => {
-                let arg_vals: Vec<BasicMetadataValueEnum> =
-                    args.iter().map(|a| self.emit_expr(a).into()).collect();
+                let mut arg_vals: Vec<BasicMetadataValueEnum> = Vec::new();
+                for a in args {
+                    arg_vals.push(self.emit_expr(a)?.into());
+                }
                 let c_name = Self::mangle(name);
                 let callee = self
                     .module
                     .get_function(&c_name)
-                    .unwrap_or_else(|| panic!("codegen: undefined function: {}", name));
+                    .ok_or_else(|| CodeGenError::UndefinedFunction(name.clone()))?;
 
                 let call_val = self.builder.build_call(callee, &arg_vals, "call").unwrap();
 
                 // Check if function returns void
                 if callee.get_type().get_return_type().is_none() {
-                    self.unit_value()
+                    Ok(self.unit_value())
                 } else {
-                    call_val.try_as_basic_value().unwrap_basic()
+                    Ok(call_val.try_as_basic_value().unwrap_basic())
                 }
             }
             Expr::Assign { name, value, .. } => {
-                let val = self.emit_expr(value);
-                let (addr, _) = self.lookup_var(name);
+                let val = self.emit_expr(value)?;
+                let (addr, _) = self.lookup_var(name)?;
                 self.builder.build_store(addr, val).unwrap();
-                self.unit_value()
+                Ok(self.unit_value())
             }
             Expr::If {
                 condition,
@@ -835,60 +738,65 @@ impl<'ctx> CodeGen<'ctx> {
                 Some(else_clause) => self.emit_if_expr(condition, then_block, else_clause),
                 None => self.emit_if_stmt(condition, then_block),
             },
-            Expr::While {
+            expr @ Expr::While {
                 label,
                 condition,
                 body,
-            } => self.emit_while(label, condition, body),
+            } => {
+                let while_type = self.type_map.get(expr).clone();
+                self.emit_while(label, condition, body, &while_type)
+            }
             Expr::Match {
                 expr: match_expr,
                 arms,
             } => self.emit_match(match_expr, arms),
             Expr::Block(block) => self.emit_block_value(block),
             Expr::FieldAccess { expr: inner, field } => {
-                let val = self.emit_expr(inner);
-                let base_type = self.infer_type(inner);
-                if let Type::Named(name) = &base_type {
+                let val = self.emit_expr(inner)?;
+                let base_type = self.type_map.get(inner);
+                if let Type::Named(name) = base_type {
                     if let Some(fields) = self.struct_types.get(name) {
-                        let idx = fields
-                            .iter()
-                            .position(|(n, _)| n == field)
-                            .expect("codegen: field not found");
-                        self.builder
+                        let idx = fields.iter().position(|(n, _)| n == field).ok_or_else(|| {
+                            CodeGenError::FieldNotFound {
+                                struct_name: name.clone(),
+                                field: field.clone(),
+                            }
+                        })?;
+                        Ok(self
+                            .builder
                             .build_extract_value(val.into_struct_value(), idx as u32, field)
-                            .unwrap()
+                            .unwrap())
                     } else {
-                        panic!("codegen: not a struct type");
+                        Err(CodeGenError::NotAStructType(name.clone()))
                     }
                 } else {
-                    panic!("codegen: field access on non-struct");
+                    Err(CodeGenError::NotAStructType(format!("{:?}", base_type)))
                 }
             }
             Expr::TupleIndex { expr: inner, index } => {
-                let val = self.emit_expr(inner);
-                self.builder
+                let val = self.emit_expr(inner)?;
+                Ok(self
+                    .builder
                     .build_extract_value(val.into_struct_value(), *index, "tuple.idx")
-                    .unwrap()
+                    .unwrap())
             }
             Expr::TupleExpr(elems) => {
-                let types: Vec<BasicTypeEnum> = elems
-                    .iter()
-                    .map(|e| {
-                        let ty = self.infer_type(e);
-                        self.llvm_type(&ty)
-                    })
-                    .collect();
+                let mut types: Vec<BasicTypeEnum> = Vec::new();
+                for e in elems {
+                    let ty = self.type_map.get(e);
+                    types.push(self.llvm_type(ty)?);
+                }
                 let tuple_type = self.context.struct_type(&types, false);
                 let mut tuple_val = tuple_type.get_undef();
                 for (i, elem) in elems.iter().enumerate() {
-                    let val = self.emit_expr(elem);
+                    let val = self.emit_expr(elem)?;
                     tuple_val = self
                         .builder
                         .build_insert_value(tuple_val, val, i as u32, "tuple.insert")
                         .unwrap()
                         .into_struct_value();
                 }
-                tuple_val.into()
+                Ok(tuple_val.into())
             }
             Expr::StructExpr { name, fields, .. } => {
                 let struct_fields = self.struct_types.get(name).unwrap().clone();
@@ -898,18 +806,21 @@ impl<'ctx> CodeGen<'ctx> {
                     .unwrap();
                 let mut struct_val = struct_type.get_undef();
                 for (field_name, field_expr) in fields {
-                    let val = self.emit_expr(field_expr);
+                    let val = self.emit_expr(field_expr)?;
                     let idx = struct_fields
                         .iter()
                         .position(|(n, _)| n == field_name)
-                        .expect("codegen: struct field not found");
+                        .ok_or_else(|| CodeGenError::FieldNotFound {
+                            struct_name: name.clone(),
+                            field: field_name.clone(),
+                        })?;
                     struct_val = self
                         .builder
                         .build_insert_value(struct_val, val, idx as u32, "struct.insert")
                         .unwrap()
                         .into_struct_value();
                 }
-                struct_val.into()
+                Ok(struct_val.into())
             }
             Expr::EnumExpr {
                 enum_name,
@@ -926,11 +837,11 @@ impl<'ctx> CodeGen<'ctx> {
         lval: BasicValueEnum<'ctx>,
         rval: BasicValueEnum<'ctx>,
         ty: &Type,
-    ) -> BasicValueEnum<'ctx> {
-        if Self::is_float_type(ty) {
+    ) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
+        if ty.is_float() {
             let lf = lval.into_float_value();
             let rf = rval.into_float_value();
-            match op {
+            Ok(match op {
                 BinOp::Add => self.builder.build_float_add(lf, rf, "fadd").unwrap().into(),
                 BinOp::Sub => self.builder.build_float_sub(lf, rf, "fsub").unwrap().into(),
                 BinOp::Mul => self.builder.build_float_mul(lf, rf, "fmul").unwrap().into(),
@@ -950,11 +861,11 @@ impl<'ctx> CodeGen<'ctx> {
                         .into()
                 }
                 _ => unreachable!(),
-            }
+            })
         } else {
             let li = lval.into_int_value();
             let ri = rval.into_int_value();
-            match op {
+            Ok(match op {
                 BinOp::Add => self.builder.build_int_add(li, ri, "add").unwrap().into(),
                 BinOp::Sub => self.builder.build_int_sub(li, ri, "sub").unwrap().into(),
                 BinOp::Mul => self.builder.build_int_mul(li, ri, "mul").unwrap().into(),
@@ -974,17 +885,21 @@ impl<'ctx> CodeGen<'ctx> {
                         .into()
                 }
                 _ => unreachable!(),
-            }
+            })
         }
     }
 
-    fn emit_and(&mut self, left: &Expr, right: &Expr) -> BasicValueEnum<'ctx> {
+    fn emit_and(
+        &mut self,
+        left: &Expr,
+        right: &Expr,
+    ) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
         let i1_type = self.context.bool_type();
         let current_fn = self.current_function();
 
         let result_addr = self.builder.build_alloca(i1_type, "and.result").unwrap();
 
-        let lval = self.emit_expr(left).into_int_value();
+        let lval = self.emit_expr(left)?.into_int_value();
 
         let rhs_bb = self.context.append_basic_block(current_fn, "and.rhs");
         let false_bb = self.context.append_basic_block(current_fn, "and.false");
@@ -995,7 +910,7 @@ impl<'ctx> CodeGen<'ctx> {
             .unwrap();
 
         self.builder.position_at_end(rhs_bb);
-        let rval = self.emit_expr(right).into_int_value();
+        let rval = self.emit_expr(right)?.into_int_value();
         self.builder.build_store(result_addr, rval).unwrap();
         self.builder.build_unconditional_branch(merge_bb).unwrap();
 
@@ -1005,18 +920,19 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.build_unconditional_branch(merge_bb).unwrap();
 
         self.builder.position_at_end(merge_bb);
-        self.builder
+        Ok(self
+            .builder
             .build_load(i1_type, result_addr, "and.val")
-            .unwrap()
+            .unwrap())
     }
 
-    fn emit_or(&mut self, left: &Expr, right: &Expr) -> BasicValueEnum<'ctx> {
+    fn emit_or(&mut self, left: &Expr, right: &Expr) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
         let i1_type = self.context.bool_type();
         let current_fn = self.current_function();
 
         let result_addr = self.builder.build_alloca(i1_type, "or.result").unwrap();
 
-        let lval = self.emit_expr(left).into_int_value();
+        let lval = self.emit_expr(left)?.into_int_value();
 
         let true_bb = self.context.append_basic_block(current_fn, "or.true");
         let rhs_bb = self.context.append_basic_block(current_fn, "or.rhs");
@@ -1032,30 +948,37 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.build_unconditional_branch(merge_bb).unwrap();
 
         self.builder.position_at_end(rhs_bb);
-        let rval = self.emit_expr(right).into_int_value();
+        let rval = self.emit_expr(right)?.into_int_value();
         self.builder.build_store(result_addr, rval).unwrap();
         self.builder.build_unconditional_branch(merge_bb).unwrap();
 
         self.builder.position_at_end(merge_bb);
-        self.builder
+        Ok(self
+            .builder
             .build_load(i1_type, result_addr, "or.val")
-            .unwrap()
+            .unwrap())
     }
 
-    fn emit_div_mod(&mut self, left: &Expr, right: &Expr, op: BinOp) -> BasicValueEnum<'ctx> {
-        let ty = self.infer_type(left);
+    fn emit_div_mod(
+        &mut self,
+        left: &Expr,
+        right: &Expr,
+        op: BinOp,
+    ) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
+        let ty = self.type_map.get(left);
 
-        if Self::is_float_type(&ty) {
-            let lval = self.emit_expr(left).into_float_value();
-            let rval = self.emit_expr(right).into_float_value();
+        if ty.is_float() {
+            let lval = self.emit_expr(left)?.into_float_value();
+            let rval = self.emit_expr(right)?.into_float_value();
             // No division-by-zero check for floats (produces inf/nan)
-            self.builder
+            Ok(self
+                .builder
                 .build_float_div(lval, rval, "fdiv")
                 .unwrap()
-                .into()
+                .into())
         } else {
-            let lval = self.emit_expr(left).into_int_value();
-            let rval = self.emit_expr(right).into_int_value();
+            let lval = self.emit_expr(left)?.into_int_value();
+            let rval = self.emit_expr(right)?.into_int_value();
 
             let zero = rval.get_type().const_int(0, false);
             let current_fn = self.current_function();
@@ -1083,7 +1006,7 @@ impl<'ctx> CodeGen<'ctx> {
             self.builder.build_unreachable().unwrap();
 
             self.builder.position_at_end(ok_bb);
-            match op {
+            Ok(match op {
                 BinOp::Div => self
                     .builder
                     .build_int_signed_div(lval, rval, "sdiv")
@@ -1095,7 +1018,7 @@ impl<'ctx> CodeGen<'ctx> {
                     .unwrap()
                     .into(),
                 _ => unreachable!(),
-            }
+            })
         }
     }
 
@@ -1104,17 +1027,18 @@ impl<'ctx> CodeGen<'ctx> {
         val: BasicValueEnum<'ctx>,
         source: &Type,
         target: &Type,
-    ) -> BasicValueEnum<'ctx> {
+    ) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
         if source == target {
-            return val;
+            return Ok(val);
         }
 
-        match (source, target) {
+        Ok(match (source, target) {
             // Integer -> Integer
-            (s, t) if Self::is_integer_type(s) && Self::is_integer_type(t) => {
+            (s, t) if s.is_integer() && t.is_integer() => {
                 let src_bits = self.int_bit_width(s);
                 let dst_bits = self.int_bit_width(t);
-                let dst_type = self.llvm_type(t).into_int_type();
+                // These are always primitive types, so llvm_type cannot fail
+                let dst_type = self.llvm_type(t).unwrap().into_int_type();
                 let int_val = val.into_int_value();
                 if dst_bits > src_bits {
                     self.builder
@@ -1129,24 +1053,24 @@ impl<'ctx> CodeGen<'ctx> {
                 }
             }
             // Integer -> Float
-            (s, t) if Self::is_integer_type(s) && Self::is_float_type(t) => {
-                let dst_type = self.llvm_type(t).into_float_type();
+            (s, t) if s.is_integer() && t.is_float() => {
+                let dst_type = self.llvm_type(t).unwrap().into_float_type();
                 self.builder
                     .build_signed_int_to_float(val.into_int_value(), dst_type, "sitofp")
                     .unwrap()
                     .into()
             }
             // Float -> Integer
-            (s, t) if Self::is_float_type(s) && Self::is_integer_type(t) => {
-                let dst_type = self.llvm_type(t).into_int_type();
+            (s, t) if s.is_float() && t.is_integer() => {
+                let dst_type = self.llvm_type(t).unwrap().into_int_type();
                 self.builder
                     .build_float_to_signed_int(val.into_float_value(), dst_type, "fptosi")
                     .unwrap()
                     .into()
             }
             // Float -> Float
-            (s, t) if Self::is_float_type(s) && Self::is_float_type(t) => {
-                let dst_type = self.llvm_type(t).into_float_type();
+            (s, t) if s.is_float() && t.is_float() => {
+                let dst_type = self.llvm_type(t).unwrap().into_float_type();
                 let fval = val.into_float_value();
                 if self.float_bit_width(t) > self.float_bit_width(s) {
                     self.builder
@@ -1161,15 +1085,15 @@ impl<'ctx> CodeGen<'ctx> {
                 }
             }
             // Bool -> Integer
-            (Type::Bool, t) if Self::is_integer_type(t) => {
-                let dst_type = self.llvm_type(t).into_int_type();
+            (Type::Bool, t) if t.is_integer() => {
+                let dst_type = self.llvm_type(t).unwrap().into_int_type();
                 self.builder
                     .build_int_z_extend(val.into_int_value(), dst_type, "zext")
                     .unwrap()
                     .into()
             }
             // Integer -> Bool
-            (s, Type::Bool) if Self::is_integer_type(s) => {
+            (s, Type::Bool) if s.is_integer() => {
                 let zero = val.into_int_value().get_type().const_int(0, false);
                 self.builder
                     .build_int_compare(IntPredicate::NE, val.into_int_value(), zero, "tobool")
@@ -1177,19 +1101,19 @@ impl<'ctx> CodeGen<'ctx> {
                     .into()
             }
             // Bool -> Float
-            (Type::Bool, t) if Self::is_float_type(t) => {
+            (Type::Bool, t) if t.is_float() => {
                 let i32_val = self
                     .builder
                     .build_int_z_extend(val.into_int_value(), self.context.i32_type(), "bool2int")
                     .unwrap();
-                let dst_type = self.llvm_type(t).into_float_type();
+                let dst_type = self.llvm_type(t).unwrap().into_float_type();
                 self.builder
                     .build_signed_int_to_float(i32_val, dst_type, "sitofp")
                     .unwrap()
                     .into()
             }
             // Float -> Bool
-            (s, Type::Bool) if Self::is_float_type(s) => {
+            (s, Type::Bool) if s.is_float() => {
                 let zero = val.into_float_value().get_type().const_float(0.0);
                 self.builder
                     .build_float_compare(
@@ -1202,7 +1126,7 @@ impl<'ctx> CodeGen<'ctx> {
                     .into()
             }
             _ => val, // fallback
-        }
+        })
     }
 
     fn int_bit_width(&self, ty: &Type) -> u32 {
@@ -1228,13 +1152,13 @@ impl<'ctx> CodeGen<'ctx> {
         condition: &Expr,
         then_block: &Block,
         else_clause: &ElseClause,
-    ) -> BasicValueEnum<'ctx> {
+    ) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
         let result_type = if let Some(tail) = &then_block.expr {
-            self.infer_type(tail)
+            self.type_map.get(tail).clone()
         } else {
             Type::Unit
         };
-        let llvm_result_type = self.llvm_type(&result_type);
+        let llvm_result_type = self.llvm_type(&result_type)?;
 
         let current_fn = self.current_function();
         let result_addr = self
@@ -1242,7 +1166,7 @@ impl<'ctx> CodeGen<'ctx> {
             .build_alloca(llvm_result_type, "if.result")
             .unwrap();
 
-        let cond_val = self.emit_expr(condition).into_int_value();
+        let cond_val = self.emit_expr(condition)?.into_int_value();
 
         let then_bb = self.context.append_basic_block(current_fn, "if.then");
         let else_bb = self.context.append_basic_block(current_fn, "if.else");
@@ -1253,7 +1177,7 @@ impl<'ctx> CodeGen<'ctx> {
             .unwrap();
 
         self.builder.position_at_end(then_bb);
-        let then_val = self.emit_block_value(then_block);
+        let then_val = self.emit_block_value(then_block)?;
         let then_terminated = self
             .builder
             .get_insert_block()
@@ -1267,8 +1191,8 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.builder.position_at_end(else_bb);
         let else_val = match else_clause {
-            ElseClause::ElseBlock(block) => self.emit_block_value(block),
-            ElseClause::ElseIf(if_expr) => self.emit_expr(if_expr),
+            ElseClause::ElseBlock(block) => self.emit_block_value(block)?,
+            ElseClause::ElseIf(if_expr) => self.emit_expr(if_expr)?,
         };
         let else_terminated = self
             .builder
@@ -1282,15 +1206,20 @@ impl<'ctx> CodeGen<'ctx> {
         }
 
         self.builder.position_at_end(merge_bb);
-        self.builder
+        Ok(self
+            .builder
             .build_load(llvm_result_type, result_addr, "if.val")
-            .unwrap()
+            .unwrap())
     }
 
-    fn emit_if_stmt(&mut self, condition: &Expr, then_block: &Block) -> BasicValueEnum<'ctx> {
+    fn emit_if_stmt(
+        &mut self,
+        condition: &Expr,
+        then_block: &Block,
+    ) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
         let current_fn = self.current_function();
 
-        let cond_val = self.emit_expr(condition).into_int_value();
+        let cond_val = self.emit_expr(condition)?.into_int_value();
 
         let then_bb = self.context.append_basic_block(current_fn, "if.then");
         let end_bb = self.context.append_basic_block(current_fn, "if.end");
@@ -1302,10 +1231,10 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(then_bb);
         self.push_scope();
         for s in &then_block.stmts {
-            self.emit_stmt(s);
+            self.emit_stmt(s)?;
         }
         if let Some(tail) = &then_block.expr {
-            self.emit_expr(tail);
+            self.emit_expr(tail)?;
         }
         self.pop_scope();
         let then_terminated = self
@@ -1319,7 +1248,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
 
         self.builder.position_at_end(end_bb);
-        self.unit_value()
+        Ok(self.unit_value())
     }
 
     fn emit_while(
@@ -1327,23 +1256,25 @@ impl<'ctx> CodeGen<'ctx> {
         label: &Option<String>,
         condition: &Expr,
         body: &Block,
-    ) -> BasicValueEnum<'ctx> {
+        while_type: &Type,
+    ) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
         let current_fn = self.current_function();
         let cond_bb = self.context.append_basic_block(current_fn, "while.cond");
         let body_bb = self.context.append_basic_block(current_fn, "while.body");
         let end_bb = self.context.append_basic_block(current_fn, "while.end");
 
-        // Check if while loop has break with value
-        let break_value_type = self.find_break_value_type_in_block(body);
-        let result_addr = break_value_type.as_ref().map(|ty| {
-            let llvm_ty = self.llvm_type(ty);
-            self.builder.build_alloca(llvm_ty, "while.result").unwrap()
-        });
+        // Allocate result if while expression has non-unit type
+        let result_addr = if *while_type != Type::Unit {
+            let llvm_ty = self.llvm_type(while_type)?;
+            Some(self.builder.build_alloca(llvm_ty, "while.result").unwrap())
+        } else {
+            None
+        };
 
         self.builder.build_unconditional_branch(cond_bb).unwrap();
 
         self.builder.position_at_end(cond_bb);
-        let cond_val = self.emit_expr(condition).into_int_value();
+        let cond_val = self.emit_expr(condition)?.into_int_value();
         self.builder
             .build_conditional_branch(cond_val, body_bb, end_bb)
             .unwrap();
@@ -1357,7 +1288,7 @@ impl<'ctx> CodeGen<'ctx> {
         });
         self.push_scope();
         for s in &body.stmts {
-            self.emit_stmt(s);
+            self.emit_stmt(s)?;
             if self
                 .builder
                 .get_insert_block()
@@ -1370,7 +1301,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
         }
         if let Some(tail) = &body.expr {
-            self.emit_expr(tail);
+            self.emit_expr(tail)?;
         }
         self.pop_scope();
         self.loop_stack.pop();
@@ -1385,25 +1316,29 @@ impl<'ctx> CodeGen<'ctx> {
         }
 
         self.builder.position_at_end(end_bb);
-        if let (Some(addr), Some(ty)) = (result_addr, &break_value_type) {
-            let llvm_ty = self.llvm_type(ty);
-            self.builder.build_load(llvm_ty, addr, "while.val").unwrap()
+        if let Some(addr) = result_addr {
+            let llvm_ty = self.llvm_type(while_type)?;
+            Ok(self.builder.build_load(llvm_ty, addr, "while.val").unwrap())
         } else {
-            self.unit_value()
+            Ok(self.unit_value())
         }
     }
 
-    fn emit_match(&mut self, match_expr: &Expr, arms: &[MatchArm]) -> BasicValueEnum<'ctx> {
-        let match_val = self.emit_expr(match_expr);
-        let match_type = self.infer_type(match_expr);
+    fn emit_match(
+        &mut self,
+        match_expr: &Expr,
+        arms: &[MatchArm],
+    ) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
+        let match_val = self.emit_expr(match_expr)?;
+        let match_type = self.type_map.get(match_expr).clone();
 
         // Determine result type
         let result_type = if let Some(first_arm) = arms.first() {
-            self.infer_type(&first_arm.body)
+            self.type_map.get(&first_arm.body).clone()
         } else {
             Type::Unit
         };
-        let llvm_result_type = self.llvm_type(&result_type);
+        let llvm_result_type = self.llvm_type(&result_type)?;
 
         let current_fn = self.current_function();
         let result_addr = self
@@ -1413,7 +1348,7 @@ impl<'ctx> CodeGen<'ctx> {
         let merge_bb = self.context.append_basic_block(current_fn, "match.merge");
 
         // Store match value in alloca so we can use it in patterns
-        let match_llvm_type = self.llvm_type(&match_type);
+        let match_llvm_type = self.llvm_type(&match_type)?;
         let match_addr = self
             .builder
             .build_alloca(match_llvm_type, "match.val")
@@ -1450,7 +1385,7 @@ impl<'ctx> CodeGen<'ctx> {
             self.builder.position_at_end(body_bb);
             self.push_scope();
             self.emit_pattern_bindings(&arm.pattern, match_val_loaded, &match_type);
-            let arm_val = self.emit_expr(&arm.body);
+            let arm_val = self.emit_expr(&arm.body)?;
             let arm_terminated = self
                 .builder
                 .get_insert_block()
@@ -1475,9 +1410,10 @@ impl<'ctx> CodeGen<'ctx> {
         }
 
         self.builder.position_at_end(merge_bb);
-        self.builder
+        Ok(self
+            .builder
             .build_load(llvm_result_type, result_addr, "match.result")
-            .unwrap()
+            .unwrap())
     }
 
     fn emit_pattern_test(
@@ -1568,24 +1504,16 @@ impl<'ctx> CodeGen<'ctx> {
                 if let Some(variants) = self.enum_types.get(enum_name).cloned() {
                     let variant_idx = variants.iter().position(|(n, _)| n == variant).unwrap();
 
-                    // Load tag
-                    let enum_llvm_type = self.llvm_type(&Type::Named(enum_name.clone()));
+                    // These are always registered types, so llvm_type cannot fail
+                    let enum_llvm_type = self.llvm_type(&Type::Named(enum_name.clone())).unwrap();
                     let enum_addr = self
                         .builder
                         .build_alloca(enum_llvm_type, "enum.tmp")
                         .unwrap();
                     self.builder.build_store(enum_addr, val).unwrap();
 
+                    let tag = self.get_enum_tag(enum_llvm_type, enum_addr);
                     let i32_type = self.context.i32_type();
-                    let tag_ptr = self
-                        .builder
-                        .build_struct_gep(enum_llvm_type, enum_addr, 0, "tag.ptr")
-                        .unwrap();
-                    let tag = self
-                        .builder
-                        .build_load(i32_type, tag_ptr, "tag")
-                        .unwrap()
-                        .into_int_value();
                     let expected_tag = i32_type.const_int(variant_idx as u64, false);
                     let tag_match = self
                         .builder
@@ -1597,26 +1525,12 @@ impl<'ctx> CodeGen<'ctx> {
                     match (variant_kind, args) {
                         (VariantKind::Unit, _) => tag_match,
                         (VariantKind::Tuple(types), EnumPatternArgs::Tuple(pats)) => {
-                            let payload_ptr = self
-                                .builder
-                                .build_struct_gep(enum_llvm_type, enum_addr, 1, "payload.ptr")
-                                .unwrap();
+                            let payload_ptr = self.get_enum_payload_ptr(enum_llvm_type, enum_addr);
                             let mut result = tag_match;
                             let mut offset: u64 = 0;
                             for (pat, field_type) in pats.iter().zip(types.iter()) {
-                                let field_llvm_type = self.llvm_type(field_type);
-                                let field_ptr_type = self.context.ptr_type(AddressSpace::default());
-                                let field_ptr = unsafe {
-                                    self.builder
-                                        .build_gep(
-                                            self.context.i8_type(),
-                                            payload_ptr,
-                                            &[self.context.i64_type().const_int(offset, false)],
-                                            "field.ptr",
-                                        )
-                                        .unwrap()
-                                };
-                                let _ = field_ptr_type;
+                                let field_llvm_type = self.llvm_type(field_type).unwrap();
+                                let field_ptr = self.get_enum_field_ptr(payload_ptr, offset);
                                 let field_val = self
                                     .builder
                                     .build_load(field_llvm_type, field_ptr, "field.val")
@@ -1628,27 +1542,14 @@ impl<'ctx> CodeGen<'ctx> {
                             result
                         }
                         (VariantKind::Struct(fields), EnumPatternArgs::Struct(pat_fields)) => {
-                            let payload_ptr = self
-                                .builder
-                                .build_struct_gep(enum_llvm_type, enum_addr, 1, "payload.ptr")
-                                .unwrap();
+                            let payload_ptr = self.get_enum_payload_ptr(enum_llvm_type, enum_addr);
                             let mut result = tag_match;
                             for (pat_field_name, field_pat) in pat_fields {
-                                if let Some(offset_and_type) =
+                                if let Some((offset, field_type)) =
                                     self.enum_field_offset(fields, pat_field_name)
                                 {
-                                    let (offset, field_type) = offset_and_type;
-                                    let field_llvm_type = self.llvm_type(&field_type);
-                                    let field_ptr = unsafe {
-                                        self.builder
-                                            .build_gep(
-                                                self.context.i8_type(),
-                                                payload_ptr,
-                                                &[self.context.i64_type().const_int(offset, false)],
-                                                "field.ptr",
-                                            )
-                                            .unwrap()
-                                    };
+                                    let field_llvm_type = self.llvm_type(&field_type).unwrap();
+                                    let field_ptr = self.get_enum_field_ptr(payload_ptr, offset);
                                     let field_val = self
                                         .builder
                                         .build_load(field_llvm_type, field_ptr, "field.val")
@@ -1673,7 +1574,8 @@ impl<'ctx> CodeGen<'ctx> {
     fn emit_pattern_bindings(&mut self, pattern: &Pattern, val: BasicValueEnum<'ctx>, ty: &Type) {
         match pattern {
             Pattern::Binding(name) => {
-                let llvm_ty = self.llvm_type(ty);
+                // These are always types that were already validated, so llvm_type cannot fail
+                let llvm_ty = self.llvm_type(ty).unwrap();
                 let alloca = self.builder.build_alloca(llvm_ty, name).unwrap();
                 self.builder.build_store(alloca, val).unwrap();
                 self.define_var(name, alloca, ty.clone());
@@ -1717,7 +1619,8 @@ impl<'ctx> CodeGen<'ctx> {
                     let variant_idx = variants.iter().position(|(n, _)| n == variant).unwrap();
                     let variant_kind = &variants[variant_idx].1;
 
-                    let enum_llvm_type = self.llvm_type(&Type::Named(enum_name.clone()));
+                    // These are always registered types, so llvm_type cannot fail
+                    let enum_llvm_type = self.llvm_type(&Type::Named(enum_name.clone())).unwrap();
                     let enum_addr = self
                         .builder
                         .build_alloca(enum_llvm_type, "enum.bind")
@@ -1726,23 +1629,11 @@ impl<'ctx> CodeGen<'ctx> {
 
                     match (variant_kind, args) {
                         (VariantKind::Tuple(types), EnumPatternArgs::Tuple(pats)) => {
-                            let payload_ptr = self
-                                .builder
-                                .build_struct_gep(enum_llvm_type, enum_addr, 1, "payload.ptr")
-                                .unwrap();
+                            let payload_ptr = self.get_enum_payload_ptr(enum_llvm_type, enum_addr);
                             let mut offset: u64 = 0;
                             for (pat, field_type) in pats.iter().zip(types.iter()) {
-                                let field_llvm_type = self.llvm_type(field_type);
-                                let field_ptr = unsafe {
-                                    self.builder
-                                        .build_gep(
-                                            self.context.i8_type(),
-                                            payload_ptr,
-                                            &[self.context.i64_type().const_int(offset, false)],
-                                            "field.ptr",
-                                        )
-                                        .unwrap()
-                                };
+                                let field_llvm_type = self.llvm_type(field_type).unwrap();
+                                let field_ptr = self.get_enum_field_ptr(payload_ptr, offset);
                                 let field_val = self
                                     .builder
                                     .build_load(field_llvm_type, field_ptr, "field.val")
@@ -1752,25 +1643,13 @@ impl<'ctx> CodeGen<'ctx> {
                             }
                         }
                         (VariantKind::Struct(fields), EnumPatternArgs::Struct(pat_fields)) => {
-                            let payload_ptr = self
-                                .builder
-                                .build_struct_gep(enum_llvm_type, enum_addr, 1, "payload.ptr")
-                                .unwrap();
+                            let payload_ptr = self.get_enum_payload_ptr(enum_llvm_type, enum_addr);
                             for (pat_field_name, field_pat) in pat_fields {
                                 if let Some((offset, field_type)) =
                                     self.enum_field_offset(fields, pat_field_name)
                                 {
-                                    let field_llvm_type = self.llvm_type(&field_type);
-                                    let field_ptr = unsafe {
-                                        self.builder
-                                            .build_gep(
-                                                self.context.i8_type(),
-                                                payload_ptr,
-                                                &[self.context.i64_type().const_int(offset, false)],
-                                                "field.ptr",
-                                            )
-                                            .unwrap()
-                                    };
+                                    let field_llvm_type = self.llvm_type(&field_type).unwrap();
+                                    let field_ptr = self.get_enum_field_ptr(payload_ptr, offset);
                                     let field_val = self
                                         .builder
                                         .build_load(field_llvm_type, field_ptr, "field.val")
@@ -1792,11 +1671,11 @@ impl<'ctx> CodeGen<'ctx> {
         enum_name: &str,
         variant: &str,
         args: &EnumArgs,
-    ) -> BasicValueEnum<'ctx> {
+    ) -> Result<BasicValueEnum<'ctx>, CodeGenError> {
         let variants = self.enum_types.get(enum_name).unwrap().clone();
         let variant_idx = variants.iter().position(|(n, _)| n == variant).unwrap();
 
-        let enum_llvm_type = self.llvm_type(&Type::Named(enum_name.to_string()));
+        let enum_llvm_type = self.llvm_type(&Type::Named(enum_name.to_string()))?;
         let enum_addr = self
             .builder
             .build_alloca(enum_llvm_type, "enum.new")
@@ -1816,48 +1695,24 @@ impl<'ctx> CodeGen<'ctx> {
         match (&variant_kind, args) {
             (VariantKind::Unit, _) => {}
             (VariantKind::Tuple(types), EnumArgs::Tuple(exprs)) => {
-                let payload_ptr = self
-                    .builder
-                    .build_struct_gep(enum_llvm_type, enum_addr, 1, "payload.ptr")
-                    .unwrap();
+                let payload_ptr = self.get_enum_payload_ptr(enum_llvm_type, enum_addr);
                 let types = types.clone();
                 let mut offset: u64 = 0;
                 for (expr, field_type) in exprs.iter().zip(types.iter()) {
-                    let val = self.emit_expr(expr);
-                    let field_ptr = unsafe {
-                        self.builder
-                            .build_gep(
-                                self.context.i8_type(),
-                                payload_ptr,
-                                &[self.context.i64_type().const_int(offset, false)],
-                                "field.ptr",
-                            )
-                            .unwrap()
-                    };
+                    let val = self.emit_expr(expr)?;
+                    let field_ptr = self.get_enum_field_ptr(payload_ptr, offset);
                     self.builder.build_store(field_ptr, val).unwrap();
                     offset += self.type_size(field_type);
                 }
             }
             (VariantKind::Struct(fields), EnumArgs::Struct(field_exprs)) => {
-                let payload_ptr = self
-                    .builder
-                    .build_struct_gep(enum_llvm_type, enum_addr, 1, "payload.ptr")
-                    .unwrap();
+                let payload_ptr = self.get_enum_payload_ptr(enum_llvm_type, enum_addr);
                 let fields = fields.clone();
                 for (field_name, expr) in field_exprs {
                     if let Some((offset, _field_type)) = self.enum_field_offset(&fields, field_name)
                     {
-                        let val = self.emit_expr(expr);
-                        let field_ptr = unsafe {
-                            self.builder
-                                .build_gep(
-                                    self.context.i8_type(),
-                                    payload_ptr,
-                                    &[self.context.i64_type().const_int(offset, false)],
-                                    "field.ptr",
-                                )
-                                .unwrap()
-                        };
+                        let val = self.emit_expr(expr)?;
+                        let field_ptr = self.get_enum_field_ptr(payload_ptr, offset);
                         self.builder.build_store(field_ptr, val).unwrap();
                     }
                 }
@@ -1865,63 +1720,55 @@ impl<'ctx> CodeGen<'ctx> {
             _ => {}
         }
 
-        self.builder
+        Ok(self
+            .builder
             .build_load(enum_llvm_type, enum_addr, "enum.val")
+            .unwrap())
+    }
+
+    /// enum 値が格納されたアドレスからタグ値 (i32) を読み出す。
+    fn get_enum_tag(
+        &self,
+        enum_llvm_type: BasicTypeEnum<'ctx>,
+        enum_addr: PointerValue<'ctx>,
+    ) -> inkwell::values::IntValue<'ctx> {
+        let i32_type = self.context.i32_type();
+        let tag_ptr = self
+            .builder
+            .build_struct_gep(enum_llvm_type, enum_addr, 0, "tag.ptr")
+            .unwrap();
+        self.builder
+            .build_load(i32_type, tag_ptr, "tag")
+            .unwrap()
+            .into_int_value()
+    }
+
+    /// enum 値が格納されたアドレスからペイロード領域のポインタを取得する。
+    fn get_enum_payload_ptr(
+        &self,
+        enum_llvm_type: BasicTypeEnum<'ctx>,
+        enum_addr: PointerValue<'ctx>,
+    ) -> PointerValue<'ctx> {
+        self.builder
+            .build_struct_gep(enum_llvm_type, enum_addr, 1, "payload.ptr")
             .unwrap()
     }
 
-    fn find_break_value_type_in_block(&self, block: &Block) -> Option<Type> {
-        for stmt in &block.stmts {
-            match stmt {
-                Stmt::Break {
-                    value: Some(expr), ..
-                } => {
-                    return Some(self.infer_type(expr));
-                }
-                Stmt::Expr(expr) => {
-                    if let Some(ty) = self.find_break_value_type_in_expr(expr) {
-                        return Some(ty);
-                    }
-                }
-                _ => {}
-            }
-        }
-        if let Some(expr) = &block.expr
-            && let Some(ty) = self.find_break_value_type_in_expr(expr)
-        {
-            return Some(ty);
-        }
-        None
-    }
-
-    fn find_break_value_type_in_expr(&self, expr: &Expr) -> Option<Type> {
-        match expr {
-            Expr::If {
-                then_block,
-                else_block,
-                ..
-            } => {
-                if let Some(ty) = self.find_break_value_type_in_block(then_block) {
-                    return Some(ty);
-                }
-                if let Some(else_clause) = else_block {
-                    match else_clause.as_ref() {
-                        ElseClause::ElseBlock(block) => {
-                            if let Some(ty) = self.find_break_value_type_in_block(block) {
-                                return Some(ty);
-                            }
-                        }
-                        ElseClause::ElseIf(inner) => {
-                            if let Some(ty) = self.find_break_value_type_in_expr(inner) {
-                                return Some(ty);
-                            }
-                        }
-                    }
-                }
-                None
-            }
-            Expr::Block(block) => self.find_break_value_type_in_block(block),
-            _ => None,
+    /// ペイロードポインタにバイトオフセットを加算してフィールドポインタを取得する。
+    fn get_enum_field_ptr(
+        &self,
+        payload_ptr: PointerValue<'ctx>,
+        offset: u64,
+    ) -> PointerValue<'ctx> {
+        unsafe {
+            self.builder
+                .build_gep(
+                    self.context.i8_type(),
+                    payload_ptr,
+                    &[self.context.i64_type().const_int(offset, false)],
+                    "field.ptr",
+                )
+                .unwrap()
         }
     }
 

@@ -1,4 +1,9 @@
-use crate::token::{FloatSuffix, IntSuffix};
+use crate::arena::Id;
+use crate::diagnostics::Span;
+use crate::syntax::token::{FloatSuffix, IntSuffix};
+
+pub type ExprId = Id<Expr>;
+pub type StmtId = Id<Stmt>;
 
 #[derive(Debug)]
 pub struct Program {
@@ -8,17 +13,15 @@ pub struct Program {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct FunctionDef {
     pub name: String,
     pub params: Vec<Param>,
     pub return_type: Type,
     pub body: Block,
-    pub line: usize,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Param {
     pub name: String,
     pub param_type: Type,
@@ -36,39 +39,50 @@ pub enum Type {
     Unit,
     Tuple(Vec<Type>),
     Named(String),
+    Error,
+}
+
+impl Type {
+    pub fn is_integer(&self) -> bool {
+        matches!(self, Type::I8 | Type::I16 | Type::I32 | Type::I64)
+    }
+
+    pub fn is_float(&self) -> bool {
+        matches!(self, Type::F32 | Type::F64)
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        self.is_integer() || self.is_float()
+    }
 }
 
 #[derive(Debug)]
 pub struct Block {
-    pub stmts: Vec<Stmt>,
-    pub expr: Option<Box<Expr>>,
+    pub stmts: Vec<StmtId>,
+    pub expr: Option<ExprId>,
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct StructDef {
     pub name: String,
     pub fields: Vec<FieldDef>,
-    pub line: usize,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct FieldDef {
     pub name: String,
     pub field_type: Type,
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct EnumDef {
     pub name: String,
     pub variants: Vec<VariantDef>,
-    pub line: usize,
+    pub span: Span,
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct VariantDef {
     pub name: String,
     pub kind: VariantKind,
@@ -82,29 +96,28 @@ pub enum VariantKind {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum Stmt {
     Let {
         name: String,
         mutable: bool,
         var_type: Option<Type>,
-        init: Expr,
-        line: usize,
+        init: ExprId,
+        span: Span,
     },
     Return {
-        value: Option<Expr>,
-        line: usize,
+        value: Option<ExprId>,
+        span: Span,
     },
     Break {
         label: Option<String>,
-        value: Option<Expr>,
-        line: usize,
+        value: Option<ExprId>,
+        span: Span,
     },
     Continue {
         label: Option<String>,
-        line: usize,
+        span: Span,
     },
-    Expr(Expr),
+    Expr(ExprId),
 }
 
 #[derive(Debug)]
@@ -113,85 +126,146 @@ pub enum Expr {
     IntegerLiteral {
         value: i64,
         suffix: Option<IntSuffix>,
+        span: Span,
     },
     FloatLiteral {
         value: f64,
         suffix: Option<FloatSuffix>,
+        span: Span,
     },
-    BoolLiteral(bool),
-    UnitLiteral,
-    Identifier(String, usize),
+    BoolLiteral {
+        value: bool,
+        span: Span,
+    },
+    UnitLiteral {
+        span: Span,
+    },
+    Identifier {
+        name: String,
+        span: Span,
+    },
     BinaryOp {
         op: BinOp,
-        left: Box<Expr>,
-        right: Box<Expr>,
+        left: ExprId,
+        right: ExprId,
+        span: Span,
     },
     UnaryOp {
         op: UnaryOp,
-        operand: Box<Expr>,
+        operand: ExprId,
+        span: Span,
     },
     Cast {
-        expr: Box<Expr>,
+        expr: ExprId,
         target_type: Type,
+        span: Span,
     },
     Call {
         name: String,
-        args: Vec<Expr>,
-        line: usize,
+        args: Vec<ExprId>,
+        span: Span,
     },
     Assign {
         name: String,
-        value: Box<Expr>,
-        line: usize,
+        value: ExprId,
+        span: Span,
     },
     If {
-        condition: Box<Expr>,
+        condition: ExprId,
         then_block: Block,
-        else_block: Option<Box<ElseClause>>,
+        else_block: Option<ElseClause>,
+        span: Span,
     },
     While {
         label: Option<String>,
-        condition: Box<Expr>,
+        condition: ExprId,
         body: Block,
+        span: Span,
     },
     Match {
-        expr: Box<Expr>,
+        expr: ExprId,
         arms: Vec<MatchArm>,
+        span: Span,
     },
-    Block(Block),
+    Block {
+        block: Block,
+        span: Span,
+    },
     FieldAccess {
-        expr: Box<Expr>,
+        expr: ExprId,
         field: String,
+        span: Span,
     },
     TupleIndex {
-        expr: Box<Expr>,
+        expr: ExprId,
         index: u32,
+        span: Span,
     },
-    TupleExpr(Vec<Expr>),
+    TupleExpr {
+        elements: Vec<ExprId>,
+        span: Span,
+    },
     StructExpr {
         name: String,
-        fields: Vec<(String, Expr)>,
-        line: usize,
+        fields: Vec<(String, ExprId)>,
+        span: Span,
     },
     EnumExpr {
         enum_name: String,
         variant: String,
         args: EnumArgs,
-        line: usize,
+        span: Span,
     },
+}
+
+impl Expr {
+    pub fn span(&self) -> Span {
+        match self {
+            Expr::IntegerLiteral { span, .. }
+            | Expr::FloatLiteral { span, .. }
+            | Expr::BoolLiteral { span, .. }
+            | Expr::UnitLiteral { span }
+            | Expr::Identifier { span, .. }
+            | Expr::BinaryOp { span, .. }
+            | Expr::UnaryOp { span, .. }
+            | Expr::Cast { span, .. }
+            | Expr::Call { span, .. }
+            | Expr::Assign { span, .. }
+            | Expr::If { span, .. }
+            | Expr::While { span, .. }
+            | Expr::Match { span, .. }
+            | Expr::Block { span, .. }
+            | Expr::FieldAccess { span, .. }
+            | Expr::TupleIndex { span, .. }
+            | Expr::TupleExpr { span, .. }
+            | Expr::StructExpr { span, .. }
+            | Expr::EnumExpr { span, .. } => *span,
+        }
+    }
+
+    pub fn ends_with_block(&self) -> bool {
+        matches!(
+            self,
+            Expr::If { .. }
+                | Expr::Block { .. }
+                | Expr::Assign { .. }
+                | Expr::While { .. }
+                | Expr::Match { .. }
+        )
+    }
 }
 
 #[derive(Debug)]
 pub enum EnumArgs {
     Unit,
-    Tuple(Vec<Expr>),
-    Struct(Vec<(String, Expr)>),
+    Tuple(Vec<ExprId>),
+    Struct(Vec<(String, ExprId)>),
 }
 
 #[derive(Debug)]
 pub struct MatchArm {
     pub pattern: Pattern,
-    pub body: Expr,
+    pub body: ExprId,
 }
 
 #[derive(Debug)]
@@ -226,7 +300,7 @@ pub enum EnumPatternArgs {
 #[derive(Debug)]
 pub enum ElseClause {
     ElseBlock(Block),
-    ElseIf(Box<Expr>),
+    ElseIf(ExprId),
 }
 
 #[derive(Debug, Clone, Copy)]
