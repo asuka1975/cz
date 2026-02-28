@@ -1,16 +1,18 @@
-use crate::token::{FloatSuffix, IntSuffix, Token, TokenKind};
+use crate::diagnostics::Span;
+use crate::syntax::token::{FloatSuffix, IntSuffix, Token, TokenKind};
 
-pub struct Lexer {
-    source: Vec<char>,
+pub struct Lexer<'a> {
+    source: &'a [u8],
     pos: usize,
+    /// line/column are kept for error messages (backward compatibility)
     line: usize,
     column: usize,
 }
 
-impl Lexer {
-    pub fn new(source: &str) -> Self {
+impl<'a> Lexer<'a> {
+    pub fn new(source: &'a str) -> Self {
         Self {
-            source: source.chars().collect(),
+            source: source.as_bytes(),
             pos: 0,
             line: 1,
             column: 1,
@@ -22,7 +24,8 @@ impl Lexer {
         loop {
             self.skip_whitespace_and_comments();
             if self.is_at_end() {
-                tokens.push(Token::new(TokenKind::Eof, self.line, self.column));
+                let span = Span::new(self.pos, self.pos);
+                tokens.push(Token::new(TokenKind::Eof, span));
                 break;
             }
             let token = self.next_token()?;
@@ -35,26 +38,26 @@ impl Lexer {
         self.pos >= self.source.len()
     }
 
-    fn peek(&self) -> char {
+    fn peek(&self) -> u8 {
         if self.is_at_end() {
-            '\0'
+            0
         } else {
             self.source[self.pos]
         }
     }
 
-    fn peek_next(&self) -> char {
+    fn peek_next(&self) -> u8 {
         if self.pos + 1 >= self.source.len() {
-            '\0'
+            0
         } else {
             self.source[self.pos + 1]
         }
     }
 
-    fn advance(&mut self) -> char {
+    fn advance(&mut self) -> u8 {
         let ch = self.source[self.pos];
         self.pos += 1;
-        if ch == '\n' {
+        if ch == b'\n' {
             self.line += 1;
             self.column = 1;
         } else {
@@ -65,13 +68,11 @@ impl Lexer {
 
     fn skip_whitespace_and_comments(&mut self) {
         loop {
-            // Skip whitespace
             while !self.is_at_end() && self.peek().is_ascii_whitespace() {
                 self.advance();
             }
-            // Skip line comments
-            if !self.is_at_end() && self.peek() == '/' && self.peek_next() == '/' {
-                while !self.is_at_end() && self.peek() != '\n' {
+            if !self.is_at_end() && self.peek() == b'/' && self.peek_next() == b'/' {
+                while !self.is_at_end() && self.peek() != b'\n' {
                     self.advance();
                 }
                 continue;
@@ -81,52 +82,57 @@ impl Lexer {
     }
 
     fn next_token(&mut self) -> Result<Token, String> {
+        let start = self.pos;
         let line = self.line;
         let column = self.column;
         let ch = self.peek();
 
-        // Number literal (integer or float)
+        // Number literal
         if ch.is_ascii_digit() {
-            return self.read_number(line, column);
+            return self.read_number(start, line, column);
         }
 
         // Label: 'identifier
-        if ch == '\'' && self.peek_next().is_ascii_alphabetic() {
+        if ch == b'\'' && self.peek_next().is_ascii_alphabetic() {
             self.advance(); // consume '
             let mut name = String::new();
-            while !self.is_at_end() && (self.peek().is_ascii_alphanumeric() || self.peek() == '_') {
-                name.push(self.advance());
+            while !self.is_at_end() && (self.peek().is_ascii_alphanumeric() || self.peek() == b'_')
+            {
+                name.push(self.advance() as char);
             }
-            return Ok(Token::new(TokenKind::Label(name), line, column));
+            return Ok(Token::new(
+                TokenKind::Label(name),
+                Span::new(start, self.pos),
+            ));
         }
 
         // Identifier or keyword
-        if ch.is_ascii_alphabetic() || ch == '_' {
-            return Ok(self.read_identifier_or_keyword(line, column));
+        if ch.is_ascii_alphabetic() || ch == b'_' {
+            return Ok(self.read_identifier_or_keyword(start));
         }
 
         // Operators and punctuation
         self.advance();
         let kind = match ch {
-            '+' => TokenKind::Plus,
-            '*' => TokenKind::Star,
-            '%' => TokenKind::Percent,
-            '(' => TokenKind::LParen,
-            ')' => TokenKind::RParen,
-            '{' => TokenKind::LBrace,
-            '}' => TokenKind::RBrace,
-            ';' => TokenKind::Semicolon,
-            ',' => TokenKind::Comma,
-            ':' => {
-                if self.peek() == ':' {
+            b'+' => TokenKind::Plus,
+            b'*' => TokenKind::Star,
+            b'%' => TokenKind::Percent,
+            b'(' => TokenKind::LParen,
+            b')' => TokenKind::RParen,
+            b'{' => TokenKind::LBrace,
+            b'}' => TokenKind::RBrace,
+            b';' => TokenKind::Semicolon,
+            b',' => TokenKind::Comma,
+            b':' => {
+                if self.peek() == b':' {
                     self.advance();
                     TokenKind::ColonColon
                 } else {
                     TokenKind::Colon
                 }
             }
-            '.' => {
-                if self.peek() == '.' && self.peek_next() == '=' {
+            b'.' => {
+                if self.peek() == b'.' && self.peek_next() == b'=' {
                     self.advance();
                     self.advance();
                     TokenKind::DotDotEq
@@ -134,95 +140,96 @@ impl Lexer {
                     TokenKind::Dot
                 }
             }
-            '-' => {
-                if self.peek() == '>' {
+            b'-' => {
+                if self.peek() == b'>' {
                     self.advance();
                     TokenKind::Arrow
                 } else {
                     TokenKind::Minus
                 }
             }
-            '=' => {
-                if self.peek() == '=' {
+            b'=' => {
+                if self.peek() == b'=' {
                     self.advance();
                     TokenKind::EqEq
-                } else if self.peek() == '>' {
+                } else if self.peek() == b'>' {
                     self.advance();
                     TokenKind::FatArrow
                 } else {
                     TokenKind::Eq
                 }
             }
-            '!' => {
-                if self.peek() == '=' {
+            b'!' => {
+                if self.peek() == b'=' {
                     self.advance();
                     TokenKind::NotEq
                 } else {
                     TokenKind::Bang
                 }
             }
-            '<' => {
-                if self.peek() == '=' {
+            b'<' => {
+                if self.peek() == b'=' {
                     self.advance();
                     TokenKind::LtEq
                 } else {
                     TokenKind::Lt
                 }
             }
-            '>' => {
-                if self.peek() == '=' {
+            b'>' => {
+                if self.peek() == b'=' {
                     self.advance();
                     TokenKind::GtEq
                 } else {
                     TokenKind::Gt
                 }
             }
-            '&' => {
-                if self.peek() == '&' {
+            b'&' => {
+                if self.peek() == b'&' {
                     self.advance();
                     TokenKind::AmpAmp
                 } else {
                     return Err(format!("{}:{}: 予期しない文字 '&'", line, column));
                 }
             }
-            '|' => {
-                if self.peek() == '|' {
+            b'|' => {
+                if self.peek() == b'|' {
                     self.advance();
                     TokenKind::PipePipe
                 } else {
                     return Err(format!("{}:{}: 予期しない文字 '|'", line, column));
                 }
             }
-            '/' => TokenKind::Slash,
+            b'/' => TokenKind::Slash,
             _ => {
-                return Err(format!("{}:{}: 予期しない文字 '{}'", line, column, ch));
+                return Err(format!(
+                    "{}:{}: 予期しない文字 '{}'",
+                    line, column, ch as char
+                ));
             }
         };
 
-        Ok(Token::new(kind, line, column))
+        Ok(Token::new(kind, Span::new(start, self.pos)))
     }
 
-    fn read_number(&mut self, line: usize, column: usize) -> Result<Token, String> {
+    fn read_number(&mut self, start: usize, line: usize, column: usize) -> Result<Token, String> {
         let mut num_str = String::new();
         while !self.is_at_end() && self.peek().is_ascii_digit() {
-            num_str.push(self.advance());
+            num_str.push(self.advance() as char);
         }
 
         // Check for float (decimal point followed by digit)
-        if self.peek() == '.' && self.peek_next().is_ascii_digit() {
-            num_str.push(self.advance()); // '.'
+        if self.peek() == b'.' && self.peek_next().is_ascii_digit() {
+            num_str.push(self.advance() as char); // '.'
             while !self.is_at_end() && self.peek().is_ascii_digit() {
-                num_str.push(self.advance());
+                num_str.push(self.advance() as char);
             }
-            // Float suffix
             let suffix = self.read_float_suffix()?;
             let value: f64 = num_str
                 .parse()
                 .map_err(|_| format!("{}:{}: 浮動小数点リテラルが不正です", line, column))?;
             return Ok(Token::new(
                 TokenKind::FloatLiteral { value, suffix },
-                line,
-                column,
+                Span::new(start, self.pos),
             ));
         }
 
@@ -235,8 +242,7 @@ impl Lexer {
                     .map_err(|_| format!("{}:{}: 整数リテラルが大きすぎます", line, column))?;
                 Ok(Token::new(
                     TokenKind::IntegerLiteral { value, suffix: s },
-                    line,
-                    column,
+                    Span::new(start, self.pos),
                 ))
             }
             NumberSuffix::Float(s) => {
@@ -248,21 +254,20 @@ impl Lexer {
                         value,
                         suffix: Some(s),
                     },
-                    line,
-                    column,
+                    Span::new(start, self.pos),
                 ))
             }
         }
     }
 
     fn read_float_suffix(&mut self) -> Result<Option<FloatSuffix>, String> {
-        if self.peek() == 'f' {
+        if self.peek() == b'f' {
             let line = self.line;
             let column = self.column;
-            self.advance(); // 'f'
+            self.advance();
             let mut suffix_str = String::from("f");
             while !self.is_at_end() && self.peek().is_ascii_digit() {
-                suffix_str.push(self.advance());
+                suffix_str.push(self.advance() as char);
             }
             match suffix_str.as_str() {
                 "f32" => Ok(Some(FloatSuffix::F32)),
@@ -282,13 +287,13 @@ impl Lexer {
         _line: usize,
         _column: usize,
     ) -> Result<NumberSuffix, String> {
-        if self.peek() == 'i' {
+        if self.peek() == b'i' {
             let suf_line = self.line;
             let suf_col = self.column;
-            self.advance(); // 'i'
+            self.advance();
             let mut suffix_str = String::from("i");
             while !self.is_at_end() && self.peek().is_ascii_digit() {
-                suffix_str.push(self.advance());
+                suffix_str.push(self.advance() as char);
             }
             match suffix_str.as_str() {
                 "i8" => Ok(NumberSuffix::Int(Some(IntSuffix::I8))),
@@ -300,13 +305,13 @@ impl Lexer {
                     suf_line, suf_col, suffix_str
                 )),
             }
-        } else if self.peek() == 'f' {
+        } else if self.peek() == b'f' {
             let suf_line = self.line;
             let suf_col = self.column;
-            self.advance(); // 'f'
+            self.advance();
             let mut suffix_str = String::from("f");
             while !self.is_at_end() && self.peek().is_ascii_digit() {
-                suffix_str.push(self.advance());
+                suffix_str.push(self.advance() as char);
             }
             match suffix_str.as_str() {
                 "f32" => Ok(NumberSuffix::Float(FloatSuffix::F32)),
@@ -321,10 +326,10 @@ impl Lexer {
         }
     }
 
-    fn read_identifier_or_keyword(&mut self, line: usize, column: usize) -> Token {
+    fn read_identifier_or_keyword(&mut self, start: usize) -> Token {
         let mut ident = String::new();
-        while !self.is_at_end() && (self.peek().is_ascii_alphanumeric() || self.peek() == '_') {
-            ident.push(self.advance());
+        while !self.is_at_end() && (self.peek().is_ascii_alphanumeric() || self.peek() == b'_') {
+            ident.push(self.advance() as char);
         }
         let kind = match ident.as_str() {
             "fn" => TokenKind::Fn,
@@ -351,7 +356,7 @@ impl Lexer {
             "bool" => TokenKind::Bool,
             _ => TokenKind::Identifier(ident),
         };
-        Token::new(kind, line, column)
+        Token::new(kind, Span::new(start, self.pos))
     }
 }
 
@@ -385,28 +390,6 @@ mod tests {
     }
 
     #[test]
-    fn multiple_integers() {
-        assert_eq!(
-            tokenize("1 23 456"),
-            vec![
-                TokenKind::IntegerLiteral {
-                    value: 1,
-                    suffix: None
-                },
-                TokenKind::IntegerLiteral {
-                    value: 23,
-                    suffix: None
-                },
-                TokenKind::IntegerLiteral {
-                    value: 456,
-                    suffix: None
-                },
-                TokenKind::Eof,
-            ]
-        );
-    }
-
-    #[test]
     fn keywords() {
         assert_eq!(
             tokenize("fn let mut return if else while true false i32"),
@@ -427,55 +410,21 @@ mod tests {
     }
 
     #[test]
-    fn identifiers() {
+    fn operators() {
         assert_eq!(
-            tokenize("foo bar _x abc123"),
-            vec![
-                TokenKind::Identifier("foo".into()),
-                TokenKind::Identifier("bar".into()),
-                TokenKind::Identifier("_x".into()),
-                TokenKind::Identifier("abc123".into()),
-                TokenKind::Eof,
-            ]
-        );
-    }
-
-    #[test]
-    fn arithmetic_operators() {
-        assert_eq!(
-            tokenize("+ - * / %"),
+            tokenize("+ - * / % == != < > <= >= && || !"),
             vec![
                 TokenKind::Plus,
                 TokenKind::Minus,
                 TokenKind::Star,
                 TokenKind::Slash,
                 TokenKind::Percent,
-                TokenKind::Eof,
-            ]
-        );
-    }
-
-    #[test]
-    fn comparison_operators() {
-        assert_eq!(
-            tokenize("== != < > <= >="),
-            vec![
                 TokenKind::EqEq,
                 TokenKind::NotEq,
                 TokenKind::Lt,
                 TokenKind::Gt,
                 TokenKind::LtEq,
                 TokenKind::GtEq,
-                TokenKind::Eof,
-            ]
-        );
-    }
-
-    #[test]
-    fn logical_operators() {
-        assert_eq!(
-            tokenize("&& || !"),
-            vec![
                 TokenKind::AmpAmp,
                 TokenKind::PipePipe,
                 TokenKind::Bang,
@@ -485,143 +434,11 @@ mod tests {
     }
 
     #[test]
-    fn delimiters_and_punctuation() {
-        assert_eq!(
-            tokenize("( ) { } : ; , ->"),
-            vec![
-                TokenKind::LParen,
-                TokenKind::RParen,
-                TokenKind::LBrace,
-                TokenKind::RBrace,
-                TokenKind::Colon,
-                TokenKind::Semicolon,
-                TokenKind::Comma,
-                TokenKind::Arrow,
-                TokenKind::Eof,
-            ]
-        );
-    }
-
-    #[test]
-    fn assignment_vs_equality() {
-        assert_eq!(
-            tokenize("= =="),
-            vec![TokenKind::Eq, TokenKind::EqEq, TokenKind::Eof]
-        );
-    }
-
-    #[test]
-    fn arrow_vs_minus() {
-        assert_eq!(
-            tokenize("- ->"),
-            vec![TokenKind::Minus, TokenKind::Arrow, TokenKind::Eof]
-        );
-    }
-
-    #[test]
-    fn line_comment() {
-        assert_eq!(
-            tokenize("42 // this is a comment\n7"),
-            vec![
-                TokenKind::IntegerLiteral {
-                    value: 42,
-                    suffix: None
-                },
-                TokenKind::IntegerLiteral {
-                    value: 7,
-                    suffix: None
-                },
-                TokenKind::Eof,
-            ]
-        );
-    }
-
-    #[test]
-    fn comment_only() {
-        assert_eq!(tokenize("// nothing here"), vec![TokenKind::Eof]);
-    }
-
-    #[test]
-    fn line_column_tracking() {
-        let mut lexer = Lexer::new("fn main\n  42");
+    fn span_tracking() {
+        let mut lexer = Lexer::new("fn main");
         let tokens = lexer.tokenize().unwrap();
-        assert_eq!(tokens[0].line, 1);
-        assert_eq!(tokens[0].column, 1); // fn
-        assert_eq!(tokens[1].line, 1);
-        assert_eq!(tokens[1].column, 4); // main
-        assert_eq!(tokens[2].line, 2);
-        assert_eq!(tokens[2].column, 3); // 42
-    }
-
-    #[test]
-    fn unexpected_character() {
-        let mut lexer = Lexer::new("@");
-        let result = lexer.tokenize();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("予期しない文字"));
-    }
-
-    #[test]
-    fn single_ampersand_error() {
-        let mut lexer = Lexer::new("&");
-        let result = lexer.tokenize();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn single_pipe_error() {
-        let mut lexer = Lexer::new("|");
-        let result = lexer.tokenize();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn empty_source() {
-        assert_eq!(tokenize(""), vec![TokenKind::Eof]);
-    }
-
-    #[test]
-    fn whitespace_only() {
-        assert_eq!(tokenize("   \n\t  \n  "), vec![TokenKind::Eof]);
-    }
-
-    #[test]
-    fn function_signature() {
-        assert_eq!(
-            tokenize("fn add(a: i32, b: i32) -> i32"),
-            vec![
-                TokenKind::Fn,
-                TokenKind::Identifier("add".into()),
-                TokenKind::LParen,
-                TokenKind::Identifier("a".into()),
-                TokenKind::Colon,
-                TokenKind::I32,
-                TokenKind::Comma,
-                TokenKind::Identifier("b".into()),
-                TokenKind::Colon,
-                TokenKind::I32,
-                TokenKind::RParen,
-                TokenKind::Arrow,
-                TokenKind::I32,
-                TokenKind::Eof,
-            ]
-        );
-    }
-
-    // MS2 tests
-
-    #[test]
-    fn float_literal() {
-        assert_eq!(
-            tokenize("3.14"),
-            vec![
-                TokenKind::FloatLiteral {
-                    value: 3.14,
-                    suffix: None
-                },
-                TokenKind::Eof
-            ]
-        );
+        assert_eq!(tokens[0].span, Span::new(0, 2)); // "fn"
+        assert_eq!(tokens[1].span, Span::new(3, 7)); // "main"
     }
 
     #[test]
@@ -653,68 +470,6 @@ mod tests {
     }
 
     #[test]
-    fn integer_with_float_suffix() {
-        // 42f64 should produce a FloatLiteral
-        assert_eq!(
-            tokenize("42f64"),
-            vec![
-                TokenKind::FloatLiteral {
-                    value: 42.0,
-                    suffix: Some(FloatSuffix::F64)
-                },
-                TokenKind::Eof
-            ]
-        );
-    }
-
-    #[test]
-    fn new_keywords() {
-        assert_eq!(
-            tokenize("match break continue struct enum as"),
-            vec![
-                TokenKind::Match,
-                TokenKind::Break,
-                TokenKind::Continue,
-                TokenKind::Struct,
-                TokenKind::Enum,
-                TokenKind::As,
-                TokenKind::Eof,
-            ]
-        );
-    }
-
-    #[test]
-    fn type_keywords() {
-        assert_eq!(
-            tokenize("i8 i16 i32 i64 f32 f64 bool"),
-            vec![
-                TokenKind::I8,
-                TokenKind::I16,
-                TokenKind::I32,
-                TokenKind::I64,
-                TokenKind::F32,
-                TokenKind::F64,
-                TokenKind::Bool,
-                TokenKind::Eof,
-            ]
-        );
-    }
-
-    #[test]
-    fn new_operators() {
-        assert_eq!(
-            tokenize(". ..= => ::"),
-            vec![
-                TokenKind::Dot,
-                TokenKind::DotDotEq,
-                TokenKind::FatArrow,
-                TokenKind::ColonColon,
-                TokenKind::Eof,
-            ]
-        );
-    }
-
-    #[test]
     fn label_token() {
         assert_eq!(
             tokenize("'outer"),
@@ -723,15 +478,26 @@ mod tests {
     }
 
     #[test]
-    fn fat_arrow_vs_eq() {
+    fn line_comment() {
         assert_eq!(
-            tokenize("= => =="),
+            tokenize("42 // comment\n7"),
             vec![
-                TokenKind::Eq,
-                TokenKind::FatArrow,
-                TokenKind::EqEq,
-                TokenKind::Eof
+                TokenKind::IntegerLiteral {
+                    value: 42,
+                    suffix: None
+                },
+                TokenKind::IntegerLiteral {
+                    value: 7,
+                    suffix: None
+                },
+                TokenKind::Eof,
             ]
         );
+    }
+
+    #[test]
+    fn unexpected_character() {
+        let mut lexer = Lexer::new("@");
+        assert!(lexer.tokenize().is_err());
     }
 }

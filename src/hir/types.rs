@@ -1,8 +1,14 @@
-use crate::ast::*;
+use crate::diagnostics::Diagnostics;
+use crate::syntax::ast::{self, VariantKind};
 use std::collections::HashMap;
 
+/// Cz の型 (AST の Type と同一定義を HIR でも使う)
+pub use ast::Type;
+
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct FuncInfo {
+    pub name: String,
     pub param_count: usize,
     pub param_types: Vec<Type>,
     pub return_type: Type,
@@ -25,6 +31,7 @@ pub enum VariantInfo {
     Struct(Vec<(String, Type)>),
 }
 
+/// 型定義のレジストリ。構造体・列挙型・関数シグネチャを保持する。
 pub struct TypeContext {
     pub functions: HashMap<String, FuncInfo>,
     pub structs: HashMap<String, StructInfo>,
@@ -32,7 +39,7 @@ pub struct TypeContext {
 }
 
 impl TypeContext {
-    pub fn build(program: &Program) -> Result<TypeContext, Vec<String>> {
+    pub fn build(program: &ast::Program, source: &str) -> Result<TypeContext, Vec<String>> {
         let mut functions = HashMap::new();
         let mut structs = HashMap::new();
         let mut enums = HashMap::new();
@@ -51,6 +58,7 @@ impl TypeContext {
             functions.insert(
                 name.to_string(),
                 FuncInfo {
+                    name: name.to_string(),
                     param_count: 1,
                     param_types: vec![param_type],
                     return_type: Type::Unit,
@@ -60,10 +68,11 @@ impl TypeContext {
 
         // Register structs
         for s in &program.structs {
+            let line = Diagnostics::span_to_line(source, s.span);
             if structs.contains_key(&s.name) {
                 errors.push(format!(
                     "{}行目: 構造体 '{}' は既に定義されています",
-                    s.line, s.name
+                    line, s.name
                 ));
             } else {
                 let fields = s
@@ -77,10 +86,11 @@ impl TypeContext {
 
         // Register enums
         for e in &program.enums {
+            let line = Diagnostics::span_to_line(source, e.span);
             if enums.contains_key(&e.name) || structs.contains_key(&e.name) {
                 errors.push(format!(
                     "{}行目: 列挙型 '{}' は既に定義されています",
-                    e.line, e.name
+                    line, e.name
                 ));
             } else {
                 let variants = e
@@ -106,15 +116,17 @@ impl TypeContext {
 
         // Register functions
         for func in &program.functions {
+            let line = Diagnostics::span_to_line(source, func.span);
             if functions.contains_key(&func.name) {
                 errors.push(format!(
                     "{}行目: 関数 '{}' は既に定義されています",
-                    func.line, func.name
+                    line, func.name
                 ));
             } else {
                 functions.insert(
                     func.name.clone(),
                     FuncInfo {
+                        name: func.name.clone(),
                         param_count: func.params.len(),
                         param_types: func.params.iter().map(|p| p.param_type.clone()).collect(),
                         return_type: func.return_type.clone(),
@@ -133,53 +145,73 @@ impl TypeContext {
             Err(errors)
         }
     }
+
+    /// 型名から Named 型を解決する。
+    #[allow(dead_code)]
+    pub fn resolve_named_type<'a>(&self, name: &'a str) -> Option<&'a str> {
+        if self.structs.contains_key(name) || self.enums.contains_key(name) {
+            Some(name)
+        } else {
+            None
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn get_builtin_func_id(&self, name: &str) -> bool {
+        matches!(
+            name,
+            "print_i8"
+                | "print_i16"
+                | "print_i32"
+                | "print_i64"
+                | "print_f32"
+                | "print_f64"
+                | "print_bool"
+        )
+    }
 }
 
-/// パターンから変数バインディングを収集し、コールバックで適用する共有ユーティリティ。
-///
-/// `type_resolver::bind_pattern_vars` と `semantic::bind_pattern_vars` の
-/// 共通ロジックを抽出したもの。バインディングを一旦 Vec に収集してから
-/// コールバックを呼ぶことで、借用の問題を回避する。
+/// パターンからバインディングを収集する共有ユーティリティ。
 pub fn collect_pattern_bindings(
     ctx: &TypeContext,
-    pattern: &Pattern,
+    pattern: &ast::Pattern,
     ty: &Type,
 ) -> Vec<(String, Type)> {
     let mut bindings = Vec::new();
-    collect_pattern_bindings_inner(ctx, pattern, ty, &mut bindings);
+    collect_bindings_inner(ctx, pattern, ty, &mut bindings);
     bindings
 }
 
-fn collect_pattern_bindings_inner(
+fn collect_bindings_inner(
     ctx: &TypeContext,
-    pattern: &Pattern,
+    pattern: &ast::Pattern,
     ty: &Type,
     bindings: &mut Vec<(String, Type)>,
 ) {
     match pattern {
-        Pattern::Binding(name) => {
+        ast::Pattern::Binding(name) => {
             bindings.push((name.clone(), ty.clone()));
         }
-        Pattern::Tuple(patterns) => {
+        ast::Pattern::Tuple(patterns) => {
             if let Type::Tuple(types) = ty {
                 for (pat, t) in patterns.iter().zip(types.iter()) {
-                    collect_pattern_bindings_inner(ctx, pat, t, bindings);
+                    collect_bindings_inner(ctx, pat, t, bindings);
                 }
             }
         }
-        Pattern::Struct { name, fields } => {
+        ast::Pattern::Struct { name, fields } => {
             if let Some(struct_info) = ctx.structs.get(name) {
                 let struct_fields = struct_info.fields.clone();
                 for (field_name, field_pat) in fields {
                     if let Some((_, field_type)) =
                         struct_fields.iter().find(|(n, _)| n == field_name)
                     {
-                        collect_pattern_bindings_inner(ctx, field_pat, field_type, bindings);
+                        collect_bindings_inner(ctx, field_pat, field_type, bindings);
                     }
                 }
             }
         }
-        Pattern::Enum {
+        ast::Pattern::Enum {
             enum_name,
             variant,
             args,
@@ -188,19 +220,17 @@ fn collect_pattern_bindings_inner(
                 let variants = enum_info.variants.clone();
                 if let Some((_, variant_info)) = variants.iter().find(|(n, _)| n == variant) {
                     match (variant_info, args) {
-                        (VariantInfo::Tuple(types), EnumPatternArgs::Tuple(pats)) => {
+                        (VariantInfo::Tuple(types), ast::EnumPatternArgs::Tuple(pats)) => {
                             for (pat, t) in pats.iter().zip(types.iter()) {
-                                collect_pattern_bindings_inner(ctx, pat, t, bindings);
+                                collect_bindings_inner(ctx, pat, t, bindings);
                             }
                         }
-                        (VariantInfo::Struct(fields), EnumPatternArgs::Struct(pat_fields)) => {
+                        (VariantInfo::Struct(fields), ast::EnumPatternArgs::Struct(pat_fields)) => {
                             for (field_name, field_pat) in pat_fields {
                                 if let Some((_, field_type)) =
                                     fields.iter().find(|(n, _)| n == field_name)
                                 {
-                                    collect_pattern_bindings_inner(
-                                        ctx, field_pat, field_type, bindings,
-                                    );
+                                    collect_bindings_inner(ctx, field_pat, field_type, bindings);
                                 }
                             }
                         }
@@ -210,29 +240,5 @@ fn collect_pattern_bindings_inner(
             }
         }
         _ => {}
-    }
-}
-
-pub type ExprId = usize;
-
-pub struct TypeMap {
-    types: HashMap<ExprId, Type>,
-}
-
-impl TypeMap {
-    pub fn new() -> Self {
-        Self {
-            types: HashMap::new(),
-        }
-    }
-
-    pub fn set(&mut self, expr: &Expr, ty: Type) {
-        self.types.insert(expr as *const Expr as usize, ty);
-    }
-
-    pub fn get(&self, expr: &Expr) -> &Type {
-        self.types
-            .get(&(expr as *const Expr as usize))
-            .expect("type not resolved")
     }
 }
