@@ -1,9 +1,10 @@
-mod ast;
+mod analysis;
+mod arena;
 mod codegen;
-mod lexer;
-mod parser;
-mod semantic;
-mod token;
+mod diagnostics;
+mod hir;
+mod scope;
+mod syntax;
 
 use inkwell::context::Context;
 use std::env;
@@ -47,7 +48,7 @@ fn main() {
     };
 
     // Lexer
-    let mut lexer = lexer::Lexer::new(&source);
+    let mut lexer = syntax::lexer::Lexer::new(&source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(e) => {
@@ -57,28 +58,75 @@ fn main() {
     };
 
     // Parser
-    let mut parser = parser::Parser::new(tokens);
-    let program = match parser.parse_program() {
-        Ok(p) => p,
+    let parser = syntax::parser::Parser::new(tokens);
+    let parse_result = match parser.parse_program() {
+        Ok(r) => r,
         Err(e) => {
             eprintln!("構文解析エラー: {}", e);
             std::process::exit(1);
         }
     };
 
-    // Semantic analysis
-    let mut analyzer = semantic::SemanticAnalyzer::new();
-    if let Err(errors) = analyzer.analyze(&program) {
-        for e in &errors {
-            eprintln!("意味解析エラー: {}", e);
+    // Type context (register structs, enums, functions)
+    let type_ctx = match hir::types::TypeContext::build(&parse_result.program, &source) {
+        Ok(ctx) => ctx,
+        Err(errors) => {
+            for e in &errors {
+                eprintln!("意味解析エラー: {}", e);
+            }
+            std::process::exit(1);
         }
-        std::process::exit(1);
+    };
+
+    // Lowering (AST → HIR: type inference + name resolution)
+    let lowering = hir::lower::Lowering::new(&type_ctx, &source);
+    let lower_result = match lowering.lower(
+        &parse_result.program,
+        &parse_result.expr_arena,
+        &parse_result.stmt_arena,
+    ) {
+        Ok(r) => r,
+        Err(errors) => {
+            for e in &errors {
+                eprintln!("{}", e);
+            }
+            std::process::exit(1);
+        }
+    };
+
+    // Semantic analysis (on HIR)
+    {
+        let mut analyzer = analysis::SemanticAnalyzer::new(
+            &type_ctx,
+            &lower_result.expr_arena,
+            &lower_result.stmt_arena,
+            &lower_result.vars,
+            &lower_result.func_names,
+            &source,
+        );
+        if let Err(errors) = analyzer.analyze(&lower_result.program) {
+            for e in &errors {
+                eprintln!("{}", e);
+            }
+            std::process::exit(1);
+        }
     }
 
-    // Code generation (Cz -> LLVM IR via inkwell)
+    // Code generation (HIR → LLVM IR via inkwell)
     let context = Context::create();
-    let mut codegen = codegen::CodeGen::new(&context);
-    codegen.generate(&program);
+    let hir::LowerResult {
+        program: hir_program,
+        expr_arena,
+        stmt_arena,
+        vars,
+        func_names,
+    } = lower_result;
+    let mut codegen =
+        codegen::CodeGen::new(&context, expr_arena, stmt_arena, vars, func_names, type_ctx);
+    if let Err(e) = codegen.generate(&hir_program) {
+        eprintln!("コード生成エラー: {}", e);
+        std::process::exit(1);
+    }
 
     if emit_llvm {
         println!("{}", codegen.print_to_string());

@@ -1,3 +1,5 @@
+use crate::diagnostics::Span;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntSuffix {
     I8,
@@ -102,12 +104,11 @@ pub enum TokenKind {
 #[derive(Debug, Clone)]
 pub struct Token {
     pub kind: TokenKind,
-    pub line: usize,
-    pub column: usize,
+    pub span: Span,
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, line: usize, column: usize) -> Self {
-        Self { kind, line, column }
+    pub fn new(kind: TokenKind, span: Span) -> Self {
+        Self { kind, span }
     }
 }
