@@ -444,10 +444,10 @@ mod tests {
     #[test]
     fn float_literal_with_suffix() {
         assert_eq!(
-            tokenize("3.14f32"),
+            tokenize("2.72f32"),
             vec![
                 TokenKind::FloatLiteral {
-                    value: 3.14,
+                    value: 2.72,
                     suffix: Some(FloatSuffix::F32)
                 },
                 TokenKind::Eof
