@@ -1,0 +1,13 @@
+// TEST: Unresolved generic type variable
+// EXPECT: compile-error
+// DESCRIPTION: ジェネリクスの型パラメータが確定しない場合にコンパイルエラーになることを検証する
+
+enum Maybe<T> {
+    Some(T),
+    None,
+}
+
+fn main() -> i32 {
+    let x = Maybe::None;
+    0
+}

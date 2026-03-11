@@ -7,11 +7,12 @@ Cz は静的型付け言語である。MS2 では複数のプリミティブ型�
 ## 構文
 
 ```bnf
-type        = prim_type | unit_type | tuple_type | named_type
-prim_type   = "i8" | "i16" | "i32" | "i64" | "f32" | "f64" | "bool"
-unit_type   = "(" ")"
-tuple_type  = "(" type "," type ("," type)* ")"
-named_type  = identifier
+type          = prim_type | unit_type | tuple_type | named_type | generic_type
+prim_type     = "i8" | "i16" | "i32" | "i64" | "f32" | "f64" | "bool"
+unit_type     = "(" ")"
+tuple_type    = "(" type "," type ("," type)* ")"
+named_type    = identifier
+generic_type  = identifier "<" type ("," type)* ">"
 ```
 
 ## プリミティブ型
@@ -141,6 +142,25 @@ let w: bool = x as bool;  // true
 // 型推論 (型注釈省略)
 let inferred = 42;         // i32
 let pi = 3.14;             // f64
+```
+
+## ジェネリック型 (MS3)
+
+`identifier<type, ...>` の形式でジェネリック型を表現する。詳細は [11-generics.md](./11-generics.md) を参照。
+
+```cz
+let p: Pair<i32, bool> = Pair { first: 42, second: true };
+let m: Maybe<i32> = Maybe::Some(42);
+```
+
+## 型エイリアス (MS3)
+
+`type` キーワードで既存の型に別名を定義する。型エイリアスは透過的であり、元の型と同一として扱われる。詳細は [11-generics.md](./11-generics.md) を参照。
+
+```cz
+type Int = i32;
+type IntPair = Pair<i32, i32>;
+type MaybePair<T> = Pair<Maybe<T>, Maybe<T>>;
 ```
 
 ## 制約・制限

@@ -1,0 +1,26 @@
+// TEST: Multiple generic instantiations
+// EXPECT: success
+// DESCRIPTION: 同一ジェネリック関数が複数の型で単相化されて正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 10\n20\n30\ntrue\n
+
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+
+fn first<A, B>(p: Pair<A, B>) -> A {
+    p.first
+}
+
+fn main() -> i32 {
+    let p1 = Pair { first: 10, second: true };
+    let p2 = Pair { first: 20i64, second: 3.14 };
+    let p3 = Pair { first: 30, second: 40 };
+
+    print_i32(first(p1));
+    print_i64(first(p2));
+    print_i32(first(p3));
+    print_bool(Pair { first: true, second: 0 }.first);
+    0
+}

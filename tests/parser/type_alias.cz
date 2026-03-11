@@ -1,0 +1,17 @@
+// TEST: Type alias parsing
+// EXPECT: success
+// DESCRIPTION: 型エイリアスの定義と使用が正しくパースされることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n
+
+type Int = i32;
+
+fn double(x: Int) -> Int {
+    x + x
+}
+
+fn main() -> i32 {
+    let a: Int = 21;
+    print_i32(double(a));
+    0
+}

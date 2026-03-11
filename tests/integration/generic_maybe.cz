@@ -1,0 +1,34 @@
+// TEST: Generic Maybe enum
+// EXPECT: success
+// DESCRIPTION: ジェネリック列挙型 Maybe のパターンマッチと型推論が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n0\ntrue\n
+
+enum Maybe<T> {
+    Some(T),
+    None,
+}
+
+fn unwrap_or<T>(m: Maybe<T>, default: T) -> T {
+    match m {
+        Maybe::Some(v) => v,
+        Maybe::None => default,
+    }
+}
+
+fn is_some<T>(m: Maybe<T>) -> bool {
+    match m {
+        Maybe::Some(_) => true,
+        Maybe::None => false,
+    }
+}
+
+fn main() -> i32 {
+    let a = Maybe::Some(42);
+    let b: Maybe<i32> = Maybe::None;
+
+    print_i32(unwrap_or(a, 0));
+    print_i32(unwrap_or(b, 0));
+    print_bool(is_some(Maybe::Some(1)));
+    0
+}

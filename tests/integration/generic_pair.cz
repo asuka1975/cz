@@ -1,0 +1,26 @@
+// TEST: Generic pair struct
+// EXPECT: success
+// DESCRIPTION: ジェネリック構造体の構築・フィールドアクセス・関数渡しが正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 1\ntrue\n20\n10\n
+
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+
+fn swap<A, B>(p: Pair<A, B>) -> Pair<B, A> {
+    Pair { first: p.second, second: p.first }
+}
+
+fn main() -> i32 {
+    let p = Pair { first: 1, second: true };
+    print_i32(p.first);
+    print_bool(p.second);
+
+    let q = Pair<i32, i32> { first: 10, second: 20 };
+    let swapped = swap(q);
+    print_i32(swapped.first);
+    print_i32(swapped.second);
+    0
+}

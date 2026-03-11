@@ -7,10 +7,11 @@ Cz の関数は `fn` キーワードで定義する。関数はブロック末�
 ## 構文
 
 ```bnf
-function_definition = "fn" identifier "(" [parameter_list] ")" ["->" type] block_expression
+function_definition = "fn" identifier [type_params] "(" [parameter_list] ")" ["->" type] block_expression
+type_params         = "<" identifier ("," identifier)* ">"
 parameter_list      = parameter ("," parameter)*
 parameter           = identifier ":" type
-function_call       = identifier "(" [argument_list] ")"
+function_call       = identifier ["<" type ("," type)* ">"] "(" [argument_list] ")"
 argument_list       = expression ("," expression)*
 return_statement    = "return" [expression] ";"
 ```
@@ -82,6 +83,23 @@ fn greet2() -> () {
 - すべての print 関数の戻り値型は `()` (MS2 で変更: MS1 では `i32` を返していた)
 - `print_f32` / `print_f64` の出力フォーマットは実装定義 (小数点以下の桁数等)
 
+### ジェネリック関数 (MS3)
+
+- 関数名の直後に `<T>` または `<T, U, ...>` で型パラメータを宣言する
+- 型パラメータは引数型、戻り値型、関数本体内の型として使用可能
+- 呼び出し時に型引数を直接指定できる: `identity<i32>(42)`
+- 引数の型から推論可能な場合、型引数は省略可能: `identity(42)`
+- 詳細は [11-generics.md](./11-generics.md) を参照
+
+```cz
+fn identity<T>(x: T) -> T {
+    x
+}
+
+let a = identity<i32>(42);  // 明示的
+let b = identity(42);       // 型推論
+```
+
 ### 関数の前方参照
 
 - 関数は定義順に関係なく他の関数から呼び出し可能とする (前方参照をサポート)
@@ -145,4 +163,5 @@ fn main() -> i32 {
 - クロージャ / ラムダ式はサポートしない
 - 関数のオーバーロードはサポートしない
 - 可変長引数はサポートしない
-- 関数を値として扱うこと (関数ポインタ、高階関数) はサポートしない
+- 関数を値として扱うこと (関数ポインタ、高階関数) はサポートしない (SM-A 時点)
+- ジェネリック関数の型パラメータに対するトレイト境界は SM-A ではサポートしない

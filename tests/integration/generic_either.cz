@@ -1,0 +1,26 @@
+// TEST: Generic Either enum
+// EXPECT: success
+// DESCRIPTION: 2型パラメータのジェネリック列挙型が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n-1\n
+
+enum Either<L, R> {
+    Left(L),
+    Right(R),
+}
+
+fn get_right_or<L, R>(e: Either<L, R>, default: R) -> R {
+    match e {
+        Either::Left(_) => default,
+        Either::Right(v) => v,
+    }
+}
+
+fn main() -> i32 {
+    let ok = Either::Right<i32, i32>(42);
+    let err = Either::Left<i32, i32>(99);
+
+    print_i32(get_right_or(ok, 0));
+    print_i32(get_right_or(err, -1));
+    0
+}

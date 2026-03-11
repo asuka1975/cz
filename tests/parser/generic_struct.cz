@@ -1,0 +1,17 @@
+// TEST: Generic struct parsing
+// EXPECT: success
+// DESCRIPTION: ジェネリック構造体の定義と型引数付き構築が正しくパースされることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 10\n20\n
+
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+
+fn main() -> i32 {
+    let p = Pair<i32, i32> { first: 10, second: 20 };
+    print_i32(p.first);
+    print_i32(p.second);
+    0
+}

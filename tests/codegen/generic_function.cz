@@ -1,0 +1,15 @@
+// TEST: Generic function codegen
+// EXPECT: success
+// DESCRIPTION: ジェネリック関数が単相化されて正しくコード生成されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\ntrue\n
+
+fn identity<T>(x: T) -> T {
+    x
+}
+
+fn main() -> i32 {
+    print_i32(identity<i32>(42));
+    print_bool(identity<bool>(true));
+    0
+}

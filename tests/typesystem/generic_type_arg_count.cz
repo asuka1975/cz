@@ -1,0 +1,13 @@
+// TEST: Generic type argument count mismatch
+// EXPECT: compile-error
+// DESCRIPTION: ジェネリック型の型引数の数が定義と一致しない場合にコンパイルエラーになることを検証する
+
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+
+fn main() -> i32 {
+    let p = Pair<i32> { first: 42, second: true };
+    0
+}

@@ -31,9 +31,9 @@ primary          = integer_literal
                  | match_expression
                  | while_expression
                  | block_expression
-function_call    = identifier "(" [expression ("," expression)*] ")"
+function_call    = identifier ["<" type ("," type)* ">"] "(" [expression ("," expression)*] ")"
 tuple_expression = "(" expression "," expression ("," expression)* ")"
-struct_expression = identifier "{" [field_init ("," field_init)* [","]] "}"
+struct_expression = identifier ["<" type ("," type)* ">"] "{" [field_init ("," field_init)* [","]] "}"
 field_init       = identifier ":" expression
 block_expression = "{" statement* [expression] "}"
 if_expression    = "if" expression block_expression ["else" (block_expression | if_expression)]

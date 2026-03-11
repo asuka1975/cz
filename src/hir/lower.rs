@@ -7,6 +7,43 @@ use crate::syntax::ast::{self, BinOp, UnaryOp};
 use crate::syntax::token::{FloatSuffix, IntSuffix};
 use std::collections::HashMap;
 
+/// Check if two concrete types are compatible (simple structural equality for primitives).
+fn types_compatible(expected: &Type, actual: &Type) -> bool {
+    match (expected, actual) {
+        // Primitives must match exactly
+        (Type::I8, Type::I8)
+        | (Type::I16, Type::I16)
+        | (Type::I32, Type::I32)
+        | (Type::I64, Type::I64)
+        | (Type::F32, Type::F32)
+        | (Type::F64, Type::F64)
+        | (Type::Bool, Type::Bool)
+        | (Type::Unit, Type::Unit) => true,
+        // Named types match if same name
+        (Type::Named(a), Type::Named(b)) => a == b,
+        // Generic types match if same name and all args match
+        (Type::Generic(a_name, a_args), Type::Generic(b_name, b_args)) => {
+            a_name == b_name
+                && a_args.len() == b_args.len()
+                && a_args
+                    .iter()
+                    .zip(b_args.iter())
+                    .all(|(a, b)| types_compatible(a, b))
+        }
+        // Tuple types match if same length and all elements match
+        (Type::Tuple(a), Type::Tuple(b)) => {
+            a.len() == b.len() && a.iter().zip(b.iter()).all(|(a, b)| types_compatible(a, b))
+        }
+        // Type params or Named types that are type params - be lenient (monomorphizer will handle)
+        (Type::TypeParam(_), _) | (_, Type::TypeParam(_)) => true,
+        // If either is Error, be lenient
+        (Type::Error, _) | (_, Type::Error) => true,
+        // Named vs Generic could be a type alias - be lenient
+        (Type::Named(_), Type::Generic(_, _)) | (Type::Generic(_, _), Type::Named(_)) => true,
+        _ => false,
+    }
+}
+
 pub struct Lowering<'a> {
     ctx: &'a TypeContext,
     source: &'a str,
@@ -17,6 +54,8 @@ pub struct Lowering<'a> {
     func_names: Vec<String>,
     scope: ScopeStack<VarId>,
     errors: Vec<String>,
+    /// 現在処理中の関数の型パラメータ名のリスト。
+    current_type_params: Vec<String>,
 }
 
 impl<'a> Lowering<'a> {
@@ -39,6 +78,7 @@ impl<'a> Lowering<'a> {
             func_names,
             scope: ScopeStack::new(),
             errors: Vec::new(),
+            current_type_params: Vec::new(),
         }
     }
 
@@ -99,6 +139,48 @@ impl<'a> Lowering<'a> {
             .push(format!("意味解析エラー: {}行目: {}", line, msg));
     }
 
+    // --- Type resolution ---
+
+    /// 型をローワリング時に解決する。
+    /// - 型エイリアスを解決する
+    /// - 現在の関数の型パラメータは TypeParam として保持する
+    /// - ジェネリック構造体/列挙型への参照は Generic 型として保持する
+    fn resolve_type_for_lowering(&self, ty: &ast::Type) -> Type {
+        match ty {
+            Type::Named(name) => {
+                // 型パラメータならそのまま保持
+                if self.current_type_params.contains(name) {
+                    return ty.clone();
+                }
+                // 型エイリアス解決
+                self.ctx.resolve_type(ty)
+            }
+            Type::Generic(name, args) => {
+                let resolved_args: Vec<Type> = args
+                    .iter()
+                    .map(|a| self.resolve_type_for_lowering(a))
+                    .collect();
+                // 型エイリアスの場合は解決
+                let generic_ty = Type::Generic(name.clone(), resolved_args);
+                self.ctx.resolve_type(&generic_ty)
+            }
+            Type::TypeParam(name) => {
+                if self.current_type_params.contains(name) {
+                    ty.clone()
+                } else {
+                    Type::Named(name.clone())
+                }
+            }
+            Type::Tuple(types) => Type::Tuple(
+                types
+                    .iter()
+                    .map(|t| self.resolve_type_for_lowering(t))
+                    .collect(),
+            ),
+            _ => ty.clone(),
+        }
+    }
+
     // --- Function ---
 
     fn lower_function(
@@ -108,16 +190,17 @@ impl<'a> Lowering<'a> {
         stmts: &Arena<ast::Stmt>,
     ) -> HirFunctionDef {
         let func_id = self.func_ids[&func.name];
+
+        // Set up type params context for this function
+        let old_type_params = self.current_type_params.clone();
+        self.current_type_params = func.type_params.clone();
+
         self.scope.push();
 
         let mut params = Vec::new();
         for param in &func.params {
-            let var_id = self.alloc_var(
-                param.name.clone(),
-                param.param_type.clone(),
-                false,
-                func.span,
-            );
+            let resolved_ty = self.resolve_type_for_lowering(&param.param_type);
+            let var_id = self.alloc_var(param.name.clone(), resolved_ty, false, func.span);
             self.scope.define(param.name.clone(), var_id);
             params.push(var_id);
         }
@@ -125,11 +208,16 @@ impl<'a> Lowering<'a> {
         let body = self.lower_block(&func.body, exprs, stmts);
         self.scope.pop();
 
+        let resolved_return = self.resolve_type_for_lowering(&func.return_type);
+
+        // Restore type params
+        self.current_type_params = old_type_params;
+
         HirFunctionDef {
             func_id,
             name: func.name.clone(),
             params,
-            return_type: func.return_type.clone(),
+            return_type: resolved_return,
             body,
             span: func.span,
         }
@@ -175,7 +263,7 @@ impl<'a> Lowering<'a> {
             } => {
                 let hir_init = self.lower_expr(exprs.get(*init), exprs, stmts);
                 let resolved_type = if let Some(declared) = var_type {
-                    declared.clone()
+                    self.resolve_type_for_lowering(declared)
                 } else {
                     self.expr_arena.get(hir_init).ty.clone()
                 };
@@ -318,22 +406,69 @@ impl<'a> Lowering<'a> {
                 span,
             } => {
                 let hir_inner = self.lower_expr(exprs.get(*inner), exprs, stmts);
+                let resolved_target = self.resolve_type_for_lowering(target_type);
                 self.alloc_expr(
                     HirExprKind::Cast {
                         expr: hir_inner,
-                        target_type: target_type.clone(),
+                        target_type: resolved_target.clone(),
                     },
-                    target_type.clone(),
+                    resolved_target,
                     *span,
                 )
             }
-            ast::Expr::Call { name, args, span } => {
+            ast::Expr::Call {
+                name,
+                type_args,
+                args,
+                span,
+            } => {
                 let hir_args: Vec<HirExprId> = args
                     .iter()
                     .map(|aid| self.lower_expr(exprs.get(*aid), exprs, stmts))
                     .collect();
                 if let Some(&func_id) = self.func_ids.get(name) {
-                    let ret_ty = self.ctx.functions[name].return_type.clone();
+                    let func_info = self.ctx.functions[name].clone();
+
+                    // Validate explicit type args if provided
+                    if !type_args.is_empty() && !func_info.type_params.is_empty() {
+                        if type_args.len() != func_info.type_params.len() {
+                            self.error(
+                                *span,
+                                format!(
+                                    "関数 '{}' は {}個の型引数が必要ですが、{}個指定されています",
+                                    name,
+                                    func_info.type_params.len(),
+                                    type_args.len()
+                                ),
+                            );
+                        } else {
+                            // Check that explicit type args are consistent with actual arg types
+                            let mut type_map: HashMap<String, Type> = HashMap::new();
+                            for (param, arg) in func_info.type_params.iter().zip(type_args.iter()) {
+                                type_map.insert(param.clone(), self.resolve_type_for_lowering(arg));
+                            }
+                            for (i, pt) in func_info.param_types.iter().enumerate() {
+                                if i < hir_args.len() {
+                                    let actual_ty = self.expr_arena.get(hir_args[i]).ty.clone();
+                                    let expected_ty =
+                                        crate::hir::types::substitute_type_map(pt, &type_map);
+                                    let expected_resolved =
+                                        self.resolve_type_for_lowering(&expected_ty);
+                                    if !types_compatible(&expected_resolved, &actual_ty) {
+                                        self.error(
+                                            *span,
+                                            format!(
+                                                "関数 '{}' の引数{}: {:?} が期待されましたが {:?} が見つかりました",
+                                                name, i + 1, expected_resolved, actual_ty
+                                            ),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let ret_ty = self.resolve_type_for_lowering(&func_info.return_type);
                     self.alloc_expr(
                         HirExprKind::Call {
                             func: func_id,
@@ -508,6 +643,7 @@ impl<'a> Lowering<'a> {
                 let hir_inner = self.lower_expr(exprs.get(*inner), exprs, stmts);
                 let base_type = self.expr_arena.get(hir_inner).ty.clone();
 
+                // Handle Named struct
                 if let Type::Named(ref name) = base_type
                     && let Some(struct_info) = self.ctx.structs.get(name)
                     && let Some(idx) = struct_info
@@ -515,7 +651,8 @@ impl<'a> Lowering<'a> {
                         .iter()
                         .position(|(fname, _)| fname == field)
                 {
-                    let field_ty = struct_info.fields[idx].1.clone();
+                    let field_ty =
+                        self.resolve_type_for_lowering(&struct_info.fields[idx].1.clone());
                     return self.alloc_expr(
                         HirExprKind::FieldAccess {
                             expr: hir_inner,
@@ -526,7 +663,40 @@ impl<'a> Lowering<'a> {
                         *span,
                     );
                 }
+                // Handle Generic struct: e.g. Pair<i32, bool>
+                if let Type::Generic(ref struct_name, ref type_args) = base_type
+                    && let Some(struct_info) = self.ctx.structs.get(struct_name)
+                    && let Some(idx) = struct_info
+                        .fields
+                        .iter()
+                        .position(|(fname, _)| fname == field)
+                {
+                    // Substitute type params in the field type
+                    let mut type_map: HashMap<String, Type> = HashMap::new();
+                    for (param, arg) in struct_info.type_params.iter().zip(type_args.iter()) {
+                        type_map.insert(param.clone(), arg.clone());
+                    }
+                    let field_ty = crate::hir::types::substitute_type_map(
+                        &struct_info.fields[idx].1,
+                        &type_map,
+                    );
+                    let resolved = self.resolve_type_for_lowering(&field_ty);
+                    return self.alloc_expr(
+                        HirExprKind::FieldAccess {
+                            expr: hir_inner,
+                            struct_name: struct_name.clone(),
+                            field_index: idx,
+                        },
+                        resolved,
+                        *span,
+                    );
+                }
                 if let Type::Named(ref name) = base_type {
+                    self.error(
+                        *span,
+                        format!("構造体 '{}' にフィールド '{}' はありません", name, field),
+                    );
+                } else if let Type::Generic(ref name, _) = base_type {
                     self.error(
                         *span,
                         format!("構造体 '{}' にフィールド '{}' はありません", name, field),
@@ -586,9 +756,16 @@ impl<'a> Lowering<'a> {
                 let ty = Type::Tuple(types);
                 self.alloc_expr(HirExprKind::TupleExpr(hir_elems), ty, *span)
             }
-            ast::Expr::StructExpr { name, fields, span } => {
-                // Reorder fields to match struct definition order
+            ast::Expr::StructExpr {
+                name,
+                type_args,
+                fields,
+                span,
+            } => {
+                // Check if this is a generic struct
                 if let Some(struct_info) = self.ctx.structs.get(name) {
+                    let struct_info = struct_info.clone();
+                    // Reorder fields to match struct definition order
                     let mut ordered_fields = Vec::new();
                     for (def_name, _) in &struct_info.fields {
                         if let Some((_, eid)) = fields.iter().find(|(n, _)| n == def_name) {
@@ -602,7 +779,6 @@ impl<'a> Lowering<'a> {
                                     name, def_name
                                 ),
                             );
-                            // Missing field - create a dummy
                             ordered_fields.push(self.alloc_expr(
                                 HirExprKind::UnitLiteral,
                                 Type::Error,
@@ -610,12 +786,51 @@ impl<'a> Lowering<'a> {
                             ));
                         }
                     }
+
+                    // Compute the result type
+                    let result_ty = if struct_info.type_params.is_empty() {
+                        Type::Named(name.clone())
+                    } else if !type_args.is_empty() {
+                        // Explicit type args: e.g. Pair<i32, bool>
+                        let resolved_args: Vec<Type> = type_args
+                            .iter()
+                            .map(|a| self.resolve_type_for_lowering(a))
+                            .collect();
+                        Type::Generic(name.clone(), resolved_args)
+                    } else {
+                        // Infer type args from field values
+                        let struct_type_params = &struct_info.type_params;
+                        let mut type_map: HashMap<String, Type> = HashMap::new();
+                        for (i, (_, def_ty)) in struct_info.fields.iter().enumerate() {
+                            if i < ordered_fields.len() {
+                                let field_ty = self.expr_arena.get(ordered_fields[i]).ty.clone();
+                                self.infer_type_params_with(
+                                    def_ty,
+                                    &field_ty,
+                                    &mut type_map,
+                                    struct_type_params,
+                                );
+                            }
+                        }
+                        let inferred_args: Vec<Type> = struct_info
+                            .type_params
+                            .iter()
+                            .map(|p| {
+                                type_map
+                                    .get(p)
+                                    .cloned()
+                                    .unwrap_or(Type::TypeParam(p.clone()))
+                            })
+                            .collect();
+                        Type::Generic(name.clone(), inferred_args)
+                    };
+
                     self.alloc_expr(
                         HirExprKind::StructExpr {
                             name: name.clone(),
                             fields: ordered_fields,
                         },
-                        Type::Named(name.clone()),
+                        result_ty,
                         *span,
                     )
                 } else {
@@ -637,10 +852,12 @@ impl<'a> Lowering<'a> {
             ast::Expr::EnumExpr {
                 enum_name,
                 variant,
+                type_args,
                 args,
                 span,
             } => {
-                let variant_index = if let Some(enum_info) = self.ctx.enums.get(enum_name) {
+                let enum_info_opt = self.ctx.enums.get(enum_name).cloned();
+                let variant_index = if let Some(ref enum_info) = enum_info_opt {
                     match enum_info.variants.iter().position(|(n, _)| n == variant) {
                         Some(idx) => idx,
                         None => {
@@ -669,8 +886,7 @@ impl<'a> Lowering<'a> {
                         HirEnumArgs::Tuple(hir_exprs)
                     }
                     ast::EnumArgs::Struct(field_exprs) => {
-                        // Reorder to match variant definition
-                        if let Some(enum_info) = self.ctx.enums.get(enum_name) {
+                        if let Some(ref enum_info) = enum_info_opt {
                             if let Some((_, VariantInfo::Struct(def_fields))) =
                                 enum_info.variants.iter().find(|(n, _)| n == variant)
                             {
@@ -704,16 +920,109 @@ impl<'a> Lowering<'a> {
                     }
                 };
 
+                // Compute the result type
+                let result_ty = if let Some(ref enum_info) = enum_info_opt {
+                    if enum_info.type_params.is_empty() {
+                        Type::Named(enum_name.clone())
+                    } else if !type_args.is_empty() {
+                        // Explicit type args
+                        let resolved_args: Vec<Type> = type_args
+                            .iter()
+                            .map(|a| self.resolve_type_for_lowering(a))
+                            .collect();
+                        Type::Generic(enum_name.clone(), resolved_args)
+                    } else {
+                        // Infer type args from constructor arguments
+                        let mut type_map: HashMap<String, Type> = HashMap::new();
+                        let variant_info = &enum_info.variants[variant_index].1;
+                        let enum_type_params = &enum_info.type_params;
+                        match (variant_info, &hir_args) {
+                            (VariantInfo::Tuple(types), HirEnumArgs::Tuple(hir_exprs)) => {
+                                for (def_ty, &hir_eid) in types.iter().zip(hir_exprs.iter()) {
+                                    let arg_ty = self.expr_arena.get(hir_eid).ty.clone();
+                                    self.infer_type_params_with(
+                                        def_ty,
+                                        &arg_ty,
+                                        &mut type_map,
+                                        enum_type_params,
+                                    );
+                                }
+                            }
+                            (VariantInfo::Struct(fields), HirEnumArgs::Struct(hir_exprs)) => {
+                                for ((_, def_ty), &hir_eid) in fields.iter().zip(hir_exprs.iter()) {
+                                    let arg_ty = self.expr_arena.get(hir_eid).ty.clone();
+                                    self.infer_type_params_with(
+                                        def_ty,
+                                        &arg_ty,
+                                        &mut type_map,
+                                        enum_type_params,
+                                    );
+                                }
+                            }
+                            _ => {}
+                        }
+                        let inferred_args: Vec<Type> = enum_info
+                            .type_params
+                            .iter()
+                            .map(|p| {
+                                type_map
+                                    .get(p)
+                                    .cloned()
+                                    .unwrap_or(Type::TypeParam(p.clone()))
+                            })
+                            .collect();
+                        Type::Generic(enum_name.clone(), inferred_args)
+                    }
+                } else {
+                    Type::Error
+                };
+
                 self.alloc_expr(
                     HirExprKind::EnumExpr {
                         enum_name: enum_name.clone(),
                         variant_index,
                         args: hir_args,
                     },
-                    Type::Named(enum_name.clone()),
+                    result_ty,
                     *span,
                 )
             }
+        }
+    }
+
+    // --- Type parameter inference ---
+
+    /// 定義型と実際の型から型パラメータを推論する。
+    fn infer_type_params_with(
+        &self,
+        pattern: &Type,
+        actual: &Type,
+        mapping: &mut HashMap<String, Type>,
+        type_params: &[String],
+    ) {
+        match pattern {
+            Type::TypeParam(name) | Type::Named(name) if type_params.contains(name) => {
+                if let std::collections::hash_map::Entry::Vacant(e) = mapping.entry(name.clone()) {
+                    e.insert(actual.clone());
+                }
+            }
+            Type::Generic(name, args) => {
+                if let Type::Generic(actual_name, actual_args) = actual
+                    && name == actual_name
+                {
+                    for (p, a) in args.iter().zip(actual_args.iter()) {
+                        self.infer_type_params_with(p, a, mapping, type_params);
+                    }
+                }
+            }
+            Type::Tuple(pat_types) => {
+                if let Type::Tuple(act_types) = actual {
+                    for (p, a) in pat_types.iter().zip(act_types.iter()) {
+                        self.infer_type_params_with(p, a, mapping, type_params);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 

@@ -1,0 +1,15 @@
+// TEST: Generic function parsing
+// EXPECT: success
+// DESCRIPTION: ジェネリック関数の定義と型引数付き呼び出しが正しくパースされることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n
+
+fn identity<T>(x: T) -> T {
+    x
+}
+
+fn main() -> i32 {
+    let a = identity<i32>(42);
+    print_i32(a);
+    0
+}

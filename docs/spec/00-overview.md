@@ -67,14 +67,28 @@ MS2 では以下の機能を追加する:
 - `print_f32`, `print_f64`: 浮動小数点型の出力
 - `print_bool`: 真偽値の出力 (`true` / `false` を出力)
 
+## マイルストーン 3 (MS3) のスコープ
+
+MS3 では型システムを大幅に拡張する:
+
+### ジェネリクスと型エイリアス (SM-A / SM-B)
+
+- ジェネリック関数: `fn identity<T>(x: T) -> T`
+- ジェネリック構造体: `struct Pair<A, B> { first: A, second: B }`
+- ジェネリック列挙型: `enum Maybe<T> { Some(T), None }`
+- 型引数の直接指定: `identity<i32>(42)` (turbofish 構文なし)
+- ジェネリクスの型推論: 引数・代入先・後続使用から型パラメータを推論
+- 型エイリアス: `type Int = i32;`, `type Result<T> = Either<i32, T>;`
+- 単相化 (monomorphization) によるコード生成
+
 ## 将来のマイルストーンへの布石
 
-以下は MS2 では未実装だが、将来のマイルストーンで導入予定である:
+以下は MS3 時点で未実装だが、将来のマイルストーンまたは MS3 の後続サブマイルストーンで導入予定である:
 
-- メソッド (`impl` ブロック)
-- `Optional<T>` 型
+- トレイト / `impl` ブロック (MS3 SM-C)
+- 高カインド型 (MS3 SM-D)
+- Functor / Applicative / Monad (MS3 SM-E)
+- do ブロック式 (MS3 SM-F)
 - 文字列型
 - クロージャ / ラムダ式
-- ジェネリクス
-- トレイト / インターフェース
 - モジュールシステム

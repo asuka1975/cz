@@ -36,6 +36,9 @@ pub(crate) fn llvm_type<'ctx>(
                 Err(CodeGenError::UndefinedType(name.clone()))
             }
         }
+        Type::Generic(_, _) | Type::TypeParam(_) => {
+            unreachable!("Generic/TypeParam should be resolved before codegen")
+        }
         Type::Error => unreachable!("Type::Error reached codegen"),
     }
 }
@@ -82,6 +85,9 @@ pub(crate) fn type_size(
             } else {
                 0
             }
+        }
+        Type::Generic(_, _) | Type::TypeParam(_) => {
+            unreachable!("Generic/TypeParam should be resolved before codegen")
         }
         Type::Error => unreachable!("Type::Error reached codegen"),
     }
