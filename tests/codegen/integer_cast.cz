@@ -4,6 +4,8 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 42\n42\n0\n
 
+import base::io::print_i32;
+
 fn main() -> i32 {
     // 拡大キャスト: i32 -> i64
     let a: i32 = 42;

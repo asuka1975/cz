@@ -4,6 +4,8 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 1\n2\n3\n
 
+import base::io::print_i32;
+
 fn classify_pair(pair: (i32, bool)) -> i32 {
     match pair {
         (0, _) => 1,

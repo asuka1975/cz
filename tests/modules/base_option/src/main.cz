@@ -1,0 +1,23 @@
+// TEST: base::option::Option の使用
+// EXPECT: success
+// DESCRIPTION: base::option::Option を import し、Some/None の構築とパターンマッチを行う
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n0\n
+
+import base::option::Option;
+import base::io::print_i32;
+
+fn unwrap_or(opt: Option<i32>, default: i32) -> i32 {
+    match opt {
+        Option::Some(v) => v,
+        Option::None => default,
+    }
+}
+
+fn main() -> i32 {
+    let a = Option::Some(42);
+    let b: Option<i32> = Option::None;
+    print_i32(unwrap_or(a, 0));
+    print_i32(unwrap_or(b, 0));
+    0
+}

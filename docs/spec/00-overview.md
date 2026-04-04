@@ -81,9 +81,32 @@ MS3 では型システムを大幅に拡張する:
 - 型エイリアス: `type Int = i32;`, `type Result<T> = Either<i32, T>;`
 - 単相化 (monomorphization) によるコード生成
 
+## マイルストーン 4 (MS4) のスコープ
+
+MS4 ではモジュールシステムと標準ライブラリの基盤を導入する:
+
+### モジュールシステム
+
+- 1 ファイル = 1 モジュール (ファイルパスからモジュール名を推定)
+- `import` による明示 import: `import base::io;`, `import app::math::add;`
+- `as` による別名: `import base::io as stdio;`
+- `pub` による可視性制御 (トップレベルアイテム単位)
+- 修飾パス: `io::print_i32(42)`, `math::add(1, 2)`
+- 名前空間: `app` (ユーザーコード) / `base` (標準ライブラリ)
+- 新規キーワード: `import`, `pub`
+- 新規記号: `::`
+
+### base 標準ライブラリ
+
+- `base::io` — 入出力関数 (`print_i32` 等を組み込み関数から移設)
+- `base::option` — `Option<T>` 型
+- `base::result` — `Result<T, E>` 型
+
+詳細は [12-modules.md](./12-modules.md) および [13-base-module.md](./13-base-module.md) を参照。
+
 ## 将来のマイルストーンへの布石
 
-以下は MS3 時点で未実装だが、将来のマイルストーンまたは MS3 の後続サブマイルストーンで導入予定である:
+以下は MS4 時点で未実装だが、将来のマイルストーンで導入予定である:
 
 - トレイト / `impl` ブロック (MS3 SM-C)
 - 高カインド型 (MS3 SM-D)
@@ -91,4 +114,4 @@ MS3 では型システムを大幅に拡張する:
 - do ブロック式 (MS3 SM-F)
 - 文字列型
 - クロージャ / ラムダ式
-- モジュールシステム
+- FFI (Foreign Function Interface)

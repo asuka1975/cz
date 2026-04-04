@@ -1,0 +1,15 @@
+// TEST: 別モジュールの pub enum を使用
+// EXPECT: success
+// DESCRIPTION: 別モジュールの pub enum を import し、構築・パターンマッチする
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 78\n
+
+import app::shapes::Shape;
+import app::shapes::area;
+import base::io::print_f64;
+
+fn main() -> i32 {
+    let s = Shape::Rect { w: 6.5, h: 12.0 };
+    print_f64(area(s));
+    0
+}

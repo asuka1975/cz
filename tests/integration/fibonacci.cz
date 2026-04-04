@@ -4,6 +4,8 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 55\n
 
+import base::io::print_i32;
+
 fn fibonacci(n: i32) -> i32 {
     if n <= 1 {
         n

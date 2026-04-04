@@ -1,2 +1,6 @@
 [features]
 skills = true
+
+[[skills.config]]
+path = ".codex/skills/codex-feedback/SKILL.md"
+enabled = true

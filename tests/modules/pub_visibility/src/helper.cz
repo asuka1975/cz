@@ -1,0 +1,7 @@
+fn secret(x: i32) -> i32 {
+    x * 2
+}
+
+pub fn public_fn(x: i32) -> i32 {
+    secret(x)
+}

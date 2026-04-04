@@ -1,0 +1,9 @@
+// TEST: pub なしアイテムへの修飾パスアクセス
+// EXPECT: compile-error
+// DESCRIPTION: モジュール import 後、pub なし関数に修飾パスでアクセスするとコンパイルエラーになる
+
+import app::helper;
+
+fn main() -> i32 {
+    helper::private_fn(42)
+}

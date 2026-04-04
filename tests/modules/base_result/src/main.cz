@@ -1,0 +1,30 @@
+// TEST: base::result::Result の使用
+// EXPECT: success
+// DESCRIPTION: base::result::Result を import し、Ok/Err の構築とパターンマッチを行う
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 5\n-1\n
+
+import base::result::Result;
+import base::io::print_i32;
+
+fn divide(a: i32, b: i32) -> Result<i32, i32> {
+    if b == 0 {
+        Result::Err(-1)
+    } else {
+        Result::Ok(a / b)
+    }
+}
+
+fn main() -> i32 {
+    let r1 = divide(10, 2);
+    let r2 = divide(10, 0);
+    match r1 {
+        Result::Ok(v) => print_i32(v),
+        Result::Err(e) => print_i32(e),
+    }
+    match r2 {
+        Result::Ok(v) => print_i32(v),
+        Result::Err(e) => print_i32(e),
+    }
+    0
+}

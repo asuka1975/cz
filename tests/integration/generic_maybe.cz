@@ -4,6 +4,9 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 42\n0\ntrue\n
 
+import base::io::print_i32;
+import base::io::print_bool;
+
 enum Maybe<T> {
     Some(T),
     None,

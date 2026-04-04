@@ -4,6 +4,8 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 3\n
 
+import base::io::print_i32;
+
 struct Point {
     x: i32,
     y: i32,

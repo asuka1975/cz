@@ -1,0 +1,9 @@
+// TEST: 循環 import
+// EXPECT: compile-error
+// DESCRIPTION: モジュール a と b が相互に import する循環依存はコンパイルエラーになる
+
+import app::a;
+
+fn main() -> i32 {
+    a::from_a()
+}

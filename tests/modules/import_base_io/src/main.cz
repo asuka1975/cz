@@ -1,0 +1,12 @@
+// TEST: base::io モジュール import
+// EXPECT: success
+// DESCRIPTION: import base::io でモジュールを import し、修飾パスで print_i32 を呼び出す
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n
+
+import base::io;
+
+fn main() -> i32 {
+    io::print_i32(42);
+    0
+}

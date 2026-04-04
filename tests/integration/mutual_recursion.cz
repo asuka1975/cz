@@ -4,6 +4,8 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: true\ntrue\n
 
+import base::io::print_bool;
+
 fn is_even(n: i32) -> bool {
     if n == 0 {
         true

@@ -4,6 +4,8 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 30\n
 
+import base::io::print_i32;
+
 fn main() -> i32 {
     let mut i = 0;
     let mut sum = 0;

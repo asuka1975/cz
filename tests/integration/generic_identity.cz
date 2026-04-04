@@ -4,6 +4,10 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 42\n100\ntrue\n
 
+import base::io::print_i32;
+import base::io::print_i64;
+import base::io::print_bool;
+
 fn identity<T>(x: T) -> T {
     x
 }

@@ -4,6 +4,12 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 42\n1000\n99999\n100000\ntrue\nfalse\n
 
+import base::io::print_i8;
+import base::io::print_i16;
+import base::io::print_i32;
+import base::io::print_i64;
+import base::io::print_bool;
+
 fn main() -> i32 {
     print_i8(42i8);
     print_i16(1000i16);

@@ -1,0 +1,15 @@
+// TEST: 別モジュールの pub struct を使用
+// EXPECT: success
+// DESCRIPTION: 別モジュールの pub struct を import し、構築・フィールドアクセスする
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 25\n
+
+import app::geometry::Point;
+import app::geometry::distance_sq;
+import base::io::print_i32;
+
+fn main() -> i32 {
+    let p = Point { x: 3, y: 4 };
+    print_i32(distance_sq(p));
+    0
+}
