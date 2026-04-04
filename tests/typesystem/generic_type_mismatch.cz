@@ -1,0 +1,12 @@
+// TEST: Generic type mismatch
+// EXPECT: compile-error
+// DESCRIPTION: ジェネリック関数で型引数と実引数の型が一致しない場合にコンパイルエラーになることを検証する
+
+fn identity<T>(x: T) -> T {
+    x
+}
+
+fn main() -> i32 {
+    let a: i32 = identity<bool>(42);
+    0
+}

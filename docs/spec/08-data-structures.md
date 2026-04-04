@@ -9,7 +9,8 @@ MS2 では構造体 (`struct`)、列挙型 (`enum`)、タプルの 3 種類の�
 ### 構文
 
 ```bnf
-struct_definition = "struct" identifier "{" field_list "}"
+struct_definition = "struct" identifier [type_params] "{" field_list "}"
+type_params       = "<" identifier ("," identifier)* ">"
 field_list        = field ("," field)* [","]
 field             = identifier ":" type
 ```
@@ -20,7 +21,7 @@ field             = identifier ":" type
 - 各フィールドは名前と型を持つ
 - フィールドの順序は定義順に固定される
 - 末尾カンマは許可
-- `impl` ブロック (メソッド定義) は MS2 ではサポートしない
+- `impl` ブロック (メソッド定義) は SM-A ではサポートしない (SM-C で導入)
 
 ### 構造体の構築
 
@@ -81,7 +82,7 @@ fn main() -> i32 {
 ### 構文
 
 ```bnf
-enum_definition = "enum" identifier "{" variant_list "}"
+enum_definition = "enum" identifier [type_params] "{" variant_list "}"
 variant_list    = variant ("," variant)* [","]
 variant         = identifier [variant_fields]
 variant_fields  = "(" type_list ")" | "{" field_list "}"
@@ -218,7 +219,7 @@ fn main() -> i32 {
 ## 制約・制限
 
 - `impl` ブロック (メソッド定義) はサポートしない
-- 構造体・列挙型のジェネリクスはサポートしない
+- 構造体・列挙型のジェネリクスを MS3 でサポート (詳細は [11-generics.md](./11-generics.md))
 - 構造体・列挙型の `==`, `!=` はサポートしない
 - タプルの要素数は 2 以上
 - 再帰的な構造体 (自身を直接フィールドに持つ) はサポートしない

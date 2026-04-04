@@ -1,0 +1,20 @@
+// TEST: Generic enum parsing
+// EXPECT: success
+// DESCRIPTION: ジェネリック列挙型の定義と型引数付き構築が正しくパースされることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n
+
+enum Maybe<T> {
+    Some(T),
+    None,
+}
+
+fn main() -> i32 {
+    let m = Maybe::Some<i32>(42);
+    let val = match m {
+        Maybe::Some(v) => v,
+        Maybe::None => 0,
+    };
+    print_i32(val);
+    0
+}

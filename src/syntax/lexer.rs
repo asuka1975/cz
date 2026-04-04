@@ -347,6 +347,7 @@ impl<'a> Lexer<'a> {
             "struct" => TokenKind::Struct,
             "enum" => TokenKind::Enum,
             "as" => TokenKind::As,
+            "type" => TokenKind::TypeKw,
             "i8" => TokenKind::I8,
             "i16" => TokenKind::I16,
             "i32" => TokenKind::I32,

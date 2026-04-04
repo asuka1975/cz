@@ -10,11 +10,21 @@ pub struct Program {
     pub functions: Vec<FunctionDef>,
     pub structs: Vec<StructDef>,
     pub enums: Vec<EnumDef>,
+    pub type_aliases: Vec<TypeAliasDef>,
+}
+
+#[derive(Debug)]
+pub struct TypeAliasDef {
+    pub name: String,
+    pub type_params: Vec<String>,
+    pub aliased_type: Type,
+    pub span: Span,
 }
 
 #[derive(Debug)]
 pub struct FunctionDef {
     pub name: String,
+    pub type_params: Vec<String>,
     pub params: Vec<Param>,
     pub return_type: Type,
     pub body: Block,
@@ -27,7 +37,7 @@ pub struct Param {
     pub param_type: Type,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     I8,
     I16,
@@ -39,6 +49,11 @@ pub enum Type {
     Unit,
     Tuple(Vec<Type>),
     Named(String),
+    /// ジェネリック型: Generic("Maybe", vec![Type::I32]) = Maybe<i32>
+    Generic(String, Vec<Type>),
+    /// 型パラメータ: TypeParam("T")
+    #[allow(clippy::enum_variant_names)]
+    TypeParam(String),
     Error,
 }
 
@@ -65,6 +80,7 @@ pub struct Block {
 #[derive(Debug)]
 pub struct StructDef {
     pub name: String,
+    pub type_params: Vec<String>,
     pub fields: Vec<FieldDef>,
     pub span: Span,
 }
@@ -78,6 +94,7 @@ pub struct FieldDef {
 #[derive(Debug)]
 pub struct EnumDef {
     pub name: String,
+    pub type_params: Vec<String>,
     pub variants: Vec<VariantDef>,
     pub span: Span,
 }
@@ -162,6 +179,7 @@ pub enum Expr {
     },
     Call {
         name: String,
+        type_args: Vec<Type>,
         args: Vec<ExprId>,
         span: Span,
     },
@@ -207,12 +225,14 @@ pub enum Expr {
     },
     StructExpr {
         name: String,
+        type_args: Vec<Type>,
         fields: Vec<(String, ExprId)>,
         span: Span,
     },
     EnumExpr {
         enum_name: String,
         variant: String,
+        type_args: Vec<Type>,
         args: EnumArgs,
         span: Span,
     },

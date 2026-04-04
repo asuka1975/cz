@@ -1,0 +1,10 @@
+// TEST: Cyclic type alias
+// EXPECT: compile-error
+// DESCRIPTION: 型エイリアスの循環定義がコンパイルエラーになることを検証する
+
+type A = B;
+type B = A;
+
+fn main() -> i32 {
+    0
+}

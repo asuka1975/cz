@@ -1,0 +1,11 @@
+// TEST: Generic tokens
+// EXPECT: success
+// DESCRIPTION: type キーワードとジェネリクス構文に使われるトークンが正しく字句解析されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT:
+
+type Int = i32;
+
+fn main() -> i32 {
+    0
+}

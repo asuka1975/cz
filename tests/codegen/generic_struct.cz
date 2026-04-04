@@ -1,0 +1,17 @@
+// TEST: Generic struct codegen
+// EXPECT: success
+// DESCRIPTION: ジェネリック構造体が単相化されて正しくコード生成されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 10\ntrue\n
+
+struct Wrapper<T> {
+    value: T,
+}
+
+fn main() -> i32 {
+    let w1 = Wrapper<i32> { value: 10 };
+    let w2 = Wrapper<bool> { value: true };
+    print_i32(w1.value);
+    print_bool(w2.value);
+    0
+}

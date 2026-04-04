@@ -1,4 +1,5 @@
 pub mod lower;
+pub mod monomorphize;
 pub mod types;
 
 use crate::arena::{Arena, Id};

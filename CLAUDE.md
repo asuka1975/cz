@@ -72,7 +72,7 @@ Cz コンパイラの開発は以下の **3フェーズ** を厳密に順守し�
 
 ```bash
 # コンテナ実行例
-docker run --rm -v $(pwd):/workspace -w /workspace -e LLVM_SYS_191_PREFIX=/usr/lib/llvm-19 czc-dev <command>
+docker run --rm -v .:/workspace -w /workspace -e LLVM_SYS_191_PREFIX=/usr/lib/llvm-19 czc-dev <command>
 ```
 
 1. **Lint チェックが通ること** — `cargo fmt --check` および `cargo clippy -- -D warnings` がエラー・警告なしで通ること

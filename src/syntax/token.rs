@@ -32,6 +32,7 @@ pub enum TokenKind {
     Struct,
     Enum,
     As,
+    TypeKw,
 
     // Literals
     IntegerLiteral {

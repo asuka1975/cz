@@ -1,0 +1,11 @@
+// TEST: Undeclared type parameter
+// EXPECT: compile-error
+// DESCRIPTION: 宣言されていない型パラメータを使用した場合にコンパイルエラーになることを検証する
+
+fn identity<T>(x: U) -> T {
+    x
+}
+
+fn main() -> i32 {
+    0
+}

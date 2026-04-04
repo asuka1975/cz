@@ -8,7 +8,8 @@ Cz プログラムの全体構造を定義する。MS2 では関数定義に加�
 
 ```bnf
 program     = top_level_item*
-top_level_item = function_definition | struct_definition | enum_definition
+top_level_item = function_definition | struct_definition | enum_definition | type_alias
+type_alias     = "type" identifier [type_params] "=" type ";"
 ```
 
 プログラムはゼロ個以上のトップレベル要素から構成される。
@@ -24,11 +25,12 @@ top_level_item = function_definition | struct_definition | enum_definition
 
 ### トップレベル要素
 
-MS2 ではトップレベルに以下を配置できる:
+MS3 ではトップレベルに以下を配置できる:
 
 - **関数定義** (`fn`): MS1 から引き続きサポート
 - **構造体定義** (`struct`): MS2 で追加
 - **列挙型定義** (`enum`): MS2 で追加
+- **型エイリアス** (`type`): MS3 で追加
 
 グローバル変数やトップレベルの式は許可しない。
 
@@ -122,4 +124,5 @@ fn main() -> i32 {
 - モジュールシステム / `import` は将来対応
 - グローバル変数はサポートしない
 - `main` 関数は必須であり、シグネチャは `fn main() -> i32` に固定
-- `impl` ブロックはサポートしない (MS2)
+- `impl` ブロックはサポートしない (SM-A 時点)
+- 型エイリアスは関数内では定義できない (MS3)

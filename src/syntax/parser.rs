@@ -30,6 +30,7 @@ impl Parser {
         let mut functions = Vec::new();
         let mut structs = Vec::new();
         let mut enums = Vec::new();
+        let mut type_aliases = Vec::new();
         while !self.check(&TokenKind::Eof) {
             if self.check(&TokenKind::Fn) {
                 functions.push(self.parse_function_def()?);
@@ -37,10 +38,12 @@ impl Parser {
                 structs.push(self.parse_struct_def()?);
             } else if self.check(&TokenKind::Enum) {
                 enums.push(self.parse_enum_def()?);
+            } else if self.check(&TokenKind::TypeKw) {
+                type_aliases.push(self.parse_type_alias()?);
             } else {
                 let tok = self.peek();
                 return Err(format!(
-                    "{}:{}: トップレベルで fn, struct, enum が期待されましたが {:?} が見つかりました",
+                    "{}:{}: トップレベルで fn, struct, enum, type が期待されましたが {:?} が見つかりました",
                     self.span_to_line(tok.span),
                     self.span_to_col(tok.span),
                     tok.kind
@@ -52,6 +55,7 @@ impl Parser {
                 functions,
                 structs,
                 enums,
+                type_aliases,
             },
             expr_arena: self.expr_arena,
             stmt_arena: self.stmt_arena,
@@ -149,12 +153,122 @@ impl Parser {
         }
     }
 
+    // --- Type Alias ---
+
+    fn parse_type_alias(&mut self) -> Result<TypeAliasDef, String> {
+        let type_tok = self.expect(&TokenKind::TypeKw)?;
+        let start = type_tok.span.start;
+        let (name, _) = self.expect_identifier()?;
+        let type_params = self.parse_type_params()?;
+        self.expect(&TokenKind::Eq)?;
+        let aliased_type = self.parse_type()?;
+        let semi = self.expect(&TokenKind::Semicolon)?;
+        Ok(TypeAliasDef {
+            name,
+            type_params,
+            aliased_type,
+            span: Span::new(start as usize, semi.span.end as usize),
+        })
+    }
+
+    // --- Type Parameters ---
+
+    /// <T, U, ...> をパースする。< がなければ空の Vec を返す。
+    fn parse_type_params(&mut self) -> Result<Vec<String>, String> {
+        if !self.check(&TokenKind::Lt) {
+            return Ok(Vec::new());
+        }
+        self.advance(); // consume <
+        let mut params = Vec::new();
+        let (first, _) = self.expect_identifier()?;
+        params.push(first);
+        while self.check(&TokenKind::Comma) {
+            self.advance();
+            let (name, _) = self.expect_identifier()?;
+            params.push(name);
+        }
+        self.expect(&TokenKind::Gt)?;
+        Ok(params)
+    }
+
+    /// <type, type, ...> を型引数としてパースする。
+    /// 関数呼び出し・構造体式・列挙型式で使用。
+    fn parse_type_args(&mut self) -> Result<Vec<Type>, String> {
+        self.advance(); // consume <
+        let mut args = vec![self.parse_type()?];
+        while self.check(&TokenKind::Comma) {
+            self.advance();
+            args.push(self.parse_type()?);
+        }
+        self.expect(&TokenKind::Gt)?;
+        Ok(args)
+    }
+
+    /// 現在位置の < が型引数の開始かどうかを先読みで判定する。
+    /// < の後に型名が続き、対応する > で閉じられていれば true。
+    fn lookahead_is_type_args(&self) -> bool {
+        if !self.check(&TokenKind::Lt) {
+            return false;
+        }
+        let mut depth = 0i32;
+        let mut i = self.pos;
+        while i < self.tokens.len() {
+            match &self.tokens[i].kind {
+                TokenKind::Lt => depth += 1,
+                TokenKind::Gt => {
+                    depth -= 1;
+                    if depth == 0 {
+                        // > の次が ( か { か ) か , か ; か => なら型引数
+                        let next = i + 1;
+                        if next < self.tokens.len() {
+                            return matches!(
+                                &self.tokens[next].kind,
+                                TokenKind::LParen
+                                    | TokenKind::LBrace
+                                    | TokenKind::RParen
+                                    | TokenKind::Comma
+                                    | TokenKind::Semicolon
+                                    | TokenKind::FatArrow
+                                    | TokenKind::Eq
+                                    | TokenKind::ColonColon
+                            );
+                        }
+                        return false;
+                    }
+                }
+                TokenKind::GtEq => {
+                    // >= は > と = に分割可能（ネスト0の場合のみ）
+                    if depth == 1 {
+                        return false; // 簡略化: >= は型引数の終わりではない
+                    }
+                }
+                // 型引数に含まれ得るトークン
+                TokenKind::Identifier(_)
+                | TokenKind::I8
+                | TokenKind::I16
+                | TokenKind::I32
+                | TokenKind::I64
+                | TokenKind::F32
+                | TokenKind::F64
+                | TokenKind::Bool
+                | TokenKind::Comma
+                | TokenKind::LParen
+                | TokenKind::RParen => {}
+                // 型引数として不正なトークンが来たら比較演算子
+                _ => return false,
+            }
+            i += 1;
+        }
+        false
+    }
+
     // --- Struct/Enum Definitions ---
 
     fn parse_struct_def(&mut self) -> Result<StructDef, String> {
         let struct_tok = self.expect(&TokenKind::Struct)?;
         let start = struct_tok.span.start;
         let (name, _) = self.expect_identifier()?;
+        let type_params = self.parse_type_params()?;
         self.expect(&TokenKind::LBrace)?;
         let mut fields = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
@@ -172,6 +286,7 @@ impl Parser {
         let end_tok = self.expect(&TokenKind::RBrace)?;
         Ok(StructDef {
             name,
+            type_params,
             fields,
             span: Span::new(start as usize, end_tok.span.end as usize),
         })
@@ -181,6 +296,7 @@ impl Parser {
         let enum_tok = self.expect(&TokenKind::Enum)?;
         let start = enum_tok.span.start;
         let (name, _) = self.expect_identifier()?;
+        let type_params = self.parse_type_params()?;
         self.expect(&TokenKind::LBrace)?;
         let mut variants = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
@@ -230,6 +346,7 @@ impl Parser {
         let end_tok = self.expect(&TokenKind::RBrace)?;
         Ok(EnumDef {
             name,
+            type_params,
             variants,
             span: Span::new(start as usize, end_tok.span.end as usize),
         })
@@ -241,6 +358,7 @@ impl Parser {
         let fn_tok = self.expect(&TokenKind::Fn)?;
         let start = fn_tok.span.start;
         let (name, _) = self.expect_identifier()?;
+        let type_params = self.parse_type_params()?;
         self.expect(&TokenKind::LParen)?;
 
         let mut params = Vec::new();
@@ -265,6 +383,7 @@ impl Parser {
 
         Ok(FunctionDef {
             name,
+            type_params,
             params,
             return_type,
             body,
@@ -332,7 +451,12 @@ impl Parser {
             }
             TokenKind::Identifier(_) => {
                 let (name, _) = self.expect_identifier()?;
-                Ok(Type::Named(name))
+                if self.check(&TokenKind::Lt) && self.lookahead_is_type_args() {
+                    let args = self.parse_type_args()?;
+                    Ok(Type::Generic(name, args))
+                } else {
+                    Ok(Type::Named(name))
+                }
             }
             _ => Err(self.err_expected("型")),
         }
@@ -768,14 +892,23 @@ impl Parser {
             TokenKind::Identifier(_) => {
                 let (name, name_span) = self.expect_identifier()?;
 
-                // Enum construction: Name::Variant(...)
+                // 型引数の先読み: name<type, ...>( or name<type, ...>{
+                let type_args = if self.check(&TokenKind::Lt) && self.lookahead_is_type_args() {
+                    self.parse_type_args()?
+                } else {
+                    Vec::new()
+                };
+
+                // Enum construction: Name::Variant(...) or Name<T>::Variant(...)
                 if self.check(&TokenKind::ColonColon) {
-                    return self.parse_enum_expr(name, name_span);
+                    return self.parse_enum_expr(name, name_span, type_args);
                 }
 
-                // Struct expression: Name { field: expr, ... }
-                if self.check(&TokenKind::LBrace) && self.is_struct_expr_start() {
-                    return self.parse_struct_expr(name, name_span);
+                // Struct expression: Name { ... } or Name<T> { ... }
+                if self.check(&TokenKind::LBrace)
+                    && (self.is_struct_expr_start() || !type_args.is_empty())
+                {
+                    return self.parse_struct_expr(name, name_span, type_args);
                 }
 
                 if self.check(&TokenKind::LParen) {
@@ -792,10 +925,14 @@ impl Parser {
                     let rparen = self.expect(&TokenKind::RParen)?;
                     Ok(self.alloc_expr(Expr::Call {
                         name,
+                        type_args,
                         args,
                         span: Span::new(name_span.start as usize, rparen.span.end as usize),
                     }))
                 } else {
+                    if !type_args.is_empty() {
+                        return Err(self.err_at_current("型引数の後に ( または { が期待されました"));
+                    }
                     Ok(self.alloc_expr(Expr::Identifier {
                         name,
                         span: name_span,
@@ -883,7 +1020,12 @@ impl Parser {
         false
     }
 
-    fn parse_struct_expr(&mut self, name: String, name_span: Span) -> Result<ExprId, String> {
+    fn parse_struct_expr(
+        &mut self,
+        name: String,
+        name_span: Span,
+        type_args: Vec<Type>,
+    ) -> Result<ExprId, String> {
         self.expect(&TokenKind::LBrace)?;
         let mut fields = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
@@ -898,14 +1040,31 @@ impl Parser {
         let end_tok = self.expect(&TokenKind::RBrace)?;
         Ok(self.alloc_expr(Expr::StructExpr {
             name,
+            type_args,
             fields,
             span: Span::new(name_span.start as usize, end_tok.span.end as usize),
         }))
     }
 
-    fn parse_enum_expr(&mut self, enum_name: String, name_span: Span) -> Result<ExprId, String> {
+    fn parse_enum_expr(
+        &mut self,
+        enum_name: String,
+        name_span: Span,
+        type_args: Vec<Type>,
+    ) -> Result<ExprId, String> {
         self.expect(&TokenKind::ColonColon)?;
         let (variant, _) = self.expect_identifier()?;
+
+        // バリアント名の後にも型引数が来る場合: Maybe::Some<i32>(42)
+        let type_args = if type_args.is_empty()
+            && self.check(&TokenKind::Lt)
+            && self.lookahead_is_type_args()
+        {
+            self.parse_type_args()?
+        } else {
+            type_args
+        };
+
         let args = if self.check(&TokenKind::LParen) {
             self.advance();
             let mut exprs = Vec::new();
@@ -939,6 +1098,7 @@ impl Parser {
         Ok(self.alloc_expr(Expr::EnumExpr {
             enum_name,
             variant,
+            type_args,
             args,
             span: Span::new(name_span.start as usize, end as usize),
         }))

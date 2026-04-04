@@ -13,9 +13,11 @@ Cz のソースコードは UTF-8 でエンコードされたテキストファ�
 ```
 fn let mut return if else while true false
 match break continue struct enum as
+type
 ```
 
 **MS2 で追加**: `match`, `break`, `continue`, `struct`, `enum`, `as`
+**MS3 で追加**: `type`
 
 ### 型キーワード
 
@@ -110,7 +112,7 @@ line_comment = '//' (任意の文字)* (改行 | EOF)
 
 | トークン種別 | 例 |
 |---|---|
-| Keyword | `fn`, `let`, `mut`, `return`, `if`, `else`, `while`, `true`, `false`, `match`, `break`, `continue`, `struct`, `enum`, `as` |
+| Keyword | `fn`, `let`, `mut`, `return`, `if`, `else`, `while`, `true`, `false`, `match`, `break`, `continue`, `struct`, `enum`, `as`, `type` |
 | TypeKeyword | `i8`, `i16`, `i32`, `i64`, `f32`, `f64`, `bool` |
 | Identifier | `foo`, `bar_baz`, `_x`, `main` |
 | Label | `'outer`, `'loop1` |

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+tracked="$(git diff --name-only || true)"
+untracked="$(git ls-files --others --exclude-standard || true)"
+
+printf "%s\n%s\n" "$tracked" "$untracked" \
+  | sed '/^$/d' \
+  | sort -u

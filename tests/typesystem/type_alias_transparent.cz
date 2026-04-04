@@ -1,0 +1,18 @@
+// TEST: Type alias is transparent
+// EXPECT: success
+// DESCRIPTION: 型エイリアスが元の型と完全に同一として扱われることを検証する (i32 の演算が可能)
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 30\n
+
+type Int = i32;
+
+fn add(a: Int, b: i32) -> i32 {
+    a + b
+}
+
+fn main() -> i32 {
+    let x: Int = 10;
+    let y: i32 = 20;
+    print_i32(add(x, y));
+    0
+}

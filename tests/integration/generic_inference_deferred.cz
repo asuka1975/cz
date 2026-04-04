@@ -1,0 +1,24 @@
+// TEST: Deferred generic type inference
+// EXPECT: success
+// DESCRIPTION: ジェネリクスの型推論が後続の使用箇所から型を確定できることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 0\n
+
+enum Maybe<T> {
+    Some(T),
+    None,
+}
+
+fn unwrap_or<T>(m: Maybe<T>, default: T) -> T {
+    match m {
+        Maybe::Some(v) => v,
+        Maybe::None => default,
+    }
+}
+
+fn main() -> i32 {
+    // Maybe::None の型は unwrap_or の第2引数から T = i32 と確定
+    let val = unwrap_or(Maybe::None, 0);
+    print_i32(val);
+    0
+}

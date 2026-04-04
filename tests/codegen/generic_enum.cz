@@ -1,0 +1,25 @@
+// TEST: Generic enum codegen
+// EXPECT: success
+// DESCRIPTION: ジェネリック列挙型が単相化されて正しくコード生成されることを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n0\n
+
+enum Maybe<T> {
+    Some(T),
+    None,
+}
+
+fn unwrap_or<T>(m: Maybe<T>, default: T) -> T {
+    match m {
+        Maybe::Some(v) => v,
+        Maybe::None => default,
+    }
+}
+
+fn main() -> i32 {
+    let a = unwrap_or(Maybe::Some(42), 0);
+    let b = unwrap_or<i32>(Maybe::None, 0);
+    print_i32(a);
+    print_i32(b);
+    0
+}

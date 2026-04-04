@@ -1,0 +1,27 @@
+// TEST: Generic type alias
+// EXPECT: success
+// DESCRIPTION: ジェネリックな型エイリアスが正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 42\n0\n
+
+enum Maybe<T> {
+    Some(T),
+    None,
+}
+
+type MaybeInt = Maybe<i32>;
+
+fn unwrap_or(m: MaybeInt, default: i32) -> i32 {
+    match m {
+        Maybe::Some(v) => v,
+        Maybe::None => default,
+    }
+}
+
+fn main() -> i32 {
+    let a: MaybeInt = Maybe::Some(42);
+    let b: MaybeInt = Maybe::None;
+    print_i32(unwrap_or(a, 0));
+    print_i32(unwrap_or(b, 0));
+    0
+}

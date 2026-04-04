@@ -1,0 +1,29 @@
+// TEST: Nested generic types
+// EXPECT: success
+// DESCRIPTION: ジェネリクスのネスト (Maybe<Pair<i32, bool>> 等) が正しく動作することを検証する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 10\ntrue\n
+
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+
+enum Maybe<T> {
+    Some(T),
+    None,
+}
+
+fn main() -> i32 {
+    let m = Maybe::Some(Pair { first: 10, second: true });
+    match m {
+        Maybe::Some(p) => {
+            print_i32(p.first);
+            print_bool(p.second);
+        }
+        Maybe::None => {
+            print_i32(0);
+        }
+    }
+    0
+}

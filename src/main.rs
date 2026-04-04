@@ -46,23 +46,7 @@ fn compile_to_object(source: &str, obj_path: &Path) -> Result<(), Vec<String>> {
         )
         .map_err(|errors| errors.iter().map(|e| e.to_string()).collect::<Vec<_>>())?;
 
-    // Semantic analysis
-    {
-        let mut analyzer = analysis::SemanticAnalyzer::new(
-            &type_ctx,
-            &lower_result.expr_arena,
-            &lower_result.stmt_arena,
-            &lower_result.vars,
-            &lower_result.func_names,
-            source,
-        );
-        analyzer
-            .analyze(&lower_result.program)
-            .map_err(|errors| errors.iter().map(|e| e.to_string()).collect::<Vec<_>>())?;
-    }
-
-    // Code generation
-    let context = Context::create();
+    // Monomorphization
     let hir::LowerResult {
         program: hir_program,
         expr_arena,
@@ -70,6 +54,38 @@ fn compile_to_object(source: &str, obj_path: &Path) -> Result<(), Vec<String>> {
         vars,
         func_names,
     } = lower_result;
+    let mono = hir::monomorphize::Monomorphizer::new(
+        expr_arena, stmt_arena, vars, func_names, type_ctx, source,
+    );
+    let mono_result = mono
+        .run(hir_program)
+        .map_err(|errors| errors.iter().map(|e| e.to_string()).collect::<Vec<_>>())?;
+
+    // Semantic analysis
+    {
+        let mut analyzer = analysis::SemanticAnalyzer::new(
+            &mono_result.ctx,
+            &mono_result.expr_arena,
+            &mono_result.stmt_arena,
+            &mono_result.vars,
+            &mono_result.func_names,
+            source,
+        );
+        analyzer
+            .analyze(&mono_result.program)
+            .map_err(|errors| errors.iter().map(|e| e.to_string()).collect::<Vec<_>>())?;
+    }
+
+    // Code generation
+    let context = Context::create();
+    let hir::monomorphize::MonomorphizeResult {
+        program: hir_program,
+        expr_arena,
+        stmt_arena,
+        vars,
+        func_names,
+        ctx: type_ctx,
+    } = mono_result;
     let mut codegen =
         codegen::CodeGen::new(&context, expr_arena, stmt_arena, vars, func_names, type_ctx);
     codegen
@@ -180,23 +196,7 @@ fn main() {
                 std::process::exit(1);
             }
         };
-        {
-            let mut analyzer = analysis::SemanticAnalyzer::new(
-                &type_ctx,
-                &lower_result.expr_arena,
-                &lower_result.stmt_arena,
-                &lower_result.vars,
-                &lower_result.func_names,
-                &source,
-            );
-            if let Err(errors) = analyzer.analyze(&lower_result.program) {
-                for e in &errors {
-                    eprintln!("{}", e);
-                }
-                std::process::exit(1);
-            }
-        }
-        let context = Context::create();
+        // Monomorphization
         let hir::LowerResult {
             program: hir_program,
             expr_arena,
@@ -204,6 +204,43 @@ fn main() {
             vars,
             func_names,
         } = lower_result;
+        let mono = hir::monomorphize::Monomorphizer::new(
+            expr_arena, stmt_arena, vars, func_names, type_ctx, &source,
+        );
+        let mono_result = match mono.run(hir_program) {
+            Ok(r) => r,
+            Err(errors) => {
+                for e in &errors {
+                    eprintln!("{}", e);
+                }
+                std::process::exit(1);
+            }
+        };
+        {
+            let mut analyzer = analysis::SemanticAnalyzer::new(
+                &mono_result.ctx,
+                &mono_result.expr_arena,
+                &mono_result.stmt_arena,
+                &mono_result.vars,
+                &mono_result.func_names,
+                &source,
+            );
+            if let Err(errors) = analyzer.analyze(&mono_result.program) {
+                for e in &errors {
+                    eprintln!("{}", e);
+                }
+                std::process::exit(1);
+            }
+        }
+        let context = Context::create();
+        let hir::monomorphize::MonomorphizeResult {
+            program: hir_program,
+            expr_arena,
+            stmt_arena,
+            vars,
+            func_names,
+            ctx: type_ctx,
+        } = mono_result;
         let mut codegen =
             codegen::CodeGen::new(&context, expr_arena, stmt_arena, vars, func_names, type_ctx);
         if let Err(e) = codegen.generate(&hir_program) {
