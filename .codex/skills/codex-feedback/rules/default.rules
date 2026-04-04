@@ -1,0 +1,58 @@
+# 1) collect_targets だけ許可
+prefix_rule(
+    pattern = ["./.codex/skills/codex-feedback/scripts/collect_targets"],
+    decision = "allow",
+    justification = "Allow only the target collection helper",
+    match = [
+        "./.codex/skills/codex-feedback/scripts/collect_targets",
+    ],
+)
+
+# 2) collect_diff_for_file だけ許可
+prefix_rule(
+    pattern = ["./.codex/skills/codex-feedback/scripts/collect_diff_for_file"],
+    decision = "allow",
+    justification = "Allow only the per-file diff helper",
+    match = [
+        "./.codex/skills/codex-feedback/scripts/collect_diff_for_file src/main.ts",
+    ],
+)
+
+# 3) git add だけ許可
+prefix_rule(
+    pattern = ["git", "add"],
+    decision = "allow",
+    justification = "Allow staging approved files only",
+    match = [
+        "git add -- src/main.ts",
+        "git add src/main.ts",
+    ],
+)
+
+# 4) 一般的な shell ラッパーは禁止
+prefix_rule(
+    pattern = ["bash"],
+    decision = "forbidden",
+    justification = "Direct bash execution is forbidden. Use the approved helper binaries only.",
+    match = [
+        "bash -lc git status",
+    ],
+)
+
+prefix_rule(
+    pattern = ["sh"],
+    decision = "forbidden",
+    justification = "Direct sh execution is forbidden.",
+    match = [
+        "sh -c git status",
+    ],
+)
+
+prefix_rule(
+    pattern = ["zsh"],
+    decision = "forbidden",
+    justification = "Direct zsh execution is forbidden.",
+    match = [
+        "zsh -lc git status",
+    ],
+)
