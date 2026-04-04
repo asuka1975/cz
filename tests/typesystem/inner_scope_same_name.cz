@@ -4,6 +4,8 @@
 // EXPECTED_EXIT_CODE: 10
 // EXPECTED_STDOUT: 20\n
 
+import base::io::print_i32;
+
 fn main() -> i32 {
     let x: i32 = 10;
     {

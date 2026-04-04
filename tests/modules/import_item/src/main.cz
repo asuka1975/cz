@@ -1,0 +1,12 @@
+// TEST: アイテム import
+// EXPECT: success
+// DESCRIPTION: import base::io::print_i32 で個別アイテムを import し、非修飾で呼び出す
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 100\n
+
+import base::io::print_i32;
+
+fn main() -> i32 {
+    print_i32(100);
+    0
+}

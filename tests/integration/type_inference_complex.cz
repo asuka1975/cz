@@ -4,6 +4,8 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 15\n10\n20\n
 
+import base::io::print_i32;
+
 struct Point { x: i32, y: i32 }
 
 fn add(a: i32, b: i32) -> i32 {

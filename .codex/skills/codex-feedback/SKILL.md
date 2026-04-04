@@ -61,9 +61,9 @@ Use this diff as the primary review input for that file.
 
 Follow this workflow strictly:
 
-1. Run `collect_targets` to obtain the review target files.
+1. Run `.codex/skills/codex-feedback/scripts/collect_targets` to obtain the review target files.
 2. For each returned file:
-   - run `collect_diff_for_file <file>`
+   - run `.codex/skills/codex-feedback/scripts/collect_diff_for_file <file>`
    - review only the relevant file diff
    - decide whether the file is approved or needs changes
 3. If the file is approved, stage it with:

@@ -6,19 +6,26 @@
 
 ## コンパイルパイプライン
 
-ソースコードは以下の 6 段階を経て実行可能バイナリに変換される。
+ソースコードは以下の段階を経て実行可能バイナリに変換される。
 
 ```
-Source
+Entry File (src/main.cz)
   │
   ▼
-[Lexer] ─────────────── Token 列
+[ModuleLoader] ──────── import を辿り依存モジュールを再帰的に発見
+  │                      ├── 各モジュールの Source を読み込み
+  │                      └── 循環 import を検出 → エラー
+  ▼
+[Lexer] × N ────────── 各モジュールの Token 列
   │
   ▼
-[Parser] ────────────── AST (構文木、型情報なし)
-  │
+[Parser] × N ───────── 各モジュールの AST (構文木、型情報なし)
+  │                      └── import 文、pub 修飾子、修飾パスを含む
   ▼
 [Lowering] ──────────── HIR (型付き中間表現、名前解決済み)
+  │                      ├── 全モジュールの型コンテキスト統合構築
+  │                      ├── import 解決 (可視性チェック含む)
+  │                      ├── 修飾パス解決 (モジュール::アイテム vs 列挙型::バリアント)
   │                      ├── 型推論
   │                      ├── 名前解決 (変数 → VarId, 関数 → FuncId)
   │                      └── フィールド名 → インデックス解決
@@ -29,7 +36,7 @@ Source
   │                      ├── 制御フロー検証
   │                      └── パターン網羅性チェック
   ▼
-[CodeGen] ───────────── LLVM IR → オブジェクトファイル
+[CodeGen] ───────────── LLVM IR → オブジェクトファイル (単一 LLVM モジュール)
   │
   ▼
 [Link] ──────────────── 実行可能バイナリ (clang)
@@ -78,19 +85,35 @@ pub struct Id<T> {
 
 ## ソース位置情報 (Span)
 
-全ノードにソース位置情報を付与する。
+全ノードにソース位置情報を付与する。MS4 で複数ファイル対応のため `file_id` フィールドを追加。
 
 ```rust
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {
-    pub start: u32,  // ソースファイル内のバイトオフセット (開始)
-    pub end: u32,    // ソースファイル内のバイトオフセット (終了、排他)
+    pub file_id: u16,  // ソースファイルの ID (MS4 で追加)
+    pub start: u32,    // ソースファイル内のバイトオフセット (開始)
+    pub end: u32,      // ソースファイル内のバイトオフセット (終了、排他)
 }
 ```
 
+- `file_id` は `FileTable` のインデックスに対応する
 - バイトオフセットからの行番号・列番号の変換は `Diagnostics` の表示時に行う
 - 各 Token, AST ノード, HIR ノードに `Span` を持たせる
-- サイズは 8 バイト
+
+### FileTable (MS4)
+
+```rust
+pub struct FileTable {
+    files: Vec<FileEntry>,
+}
+
+pub struct FileEntry {
+    pub path: PathBuf,     // ファイルパス
+    pub source: String,    // ソースコード
+}
+```
+
+`Diagnostics::render` は `&FileTable` を受け取り、`file_id` からファイルパスとソースを引く。
 
 ## AST (抽象構文木)
 
@@ -102,13 +125,34 @@ pub struct Span {
 pub type ExprId = Id<Expr>;
 pub type StmtId = Id<Stmt>;
 
+/// 修飾パス (MS4)
+pub struct Path {
+    pub segments: Vec<String>,
+    pub span: Span,
+}
+
+/// import 文 (MS4)
+pub struct ImportDecl {
+    pub path: Path,                  // import パス
+    pub alias: Option<String>,       // as 別名
+    pub span: Span,
+}
+
+/// 可視性 (MS4)
+pub enum Visibility {
+    Private,
+    Public,
+}
+
 pub struct Program {
+    pub imports: Vec<ImportDecl>,        // MS4 で追加
     pub functions: Vec<FunctionDef>,
     pub structs: Vec<StructDef>,
     pub enums: Vec<EnumDef>,
 }
 
 pub struct FunctionDef {
+    pub visibility: Visibility,  // MS4 で追加
     pub name: String,
     pub params: Vec<Param>,
     pub return_type: Type,
@@ -144,7 +188,7 @@ pub enum Expr {
     BinaryOp { op: BinOp, left: ExprId, right: ExprId, span: Span },
     UnaryOp { op: UnaryOp, operand: ExprId, span: Span },
     Cast { expr: ExprId, target_type: Type, span: Span },
-    Call { name: String, args: Vec<ExprId>, span: Span },
+    Call { path: Path, args: Vec<ExprId>, span: Span },  // MS4: name → path
     Assign { name: String, value: ExprId, span: Span },
     If { condition: ExprId, then_block: Block, else_block: Option<ElseClause>, span: Span },
     While { label: Option<String>, condition: ExprId, body: Block, span: Span },
@@ -153,8 +197,8 @@ pub enum Expr {
     FieldAccess { expr: ExprId, field: String, span: Span },
     TupleIndex { expr: ExprId, index: u32, span: Span },
     TupleExpr { elements: Vec<ExprId>, span: Span },
-    StructExpr { name: String, fields: Vec<(String, ExprId)>, span: Span },
-    EnumExpr { enum_name: String, variant: String, args: EnumArgs, span: Span },
+    StructExpr { path: Path, fields: Vec<(String, ExprId)>, span: Span },  // MS4: name → path
+    EnumExpr { path: Path, variant: String, args: EnumArgs, span: Span },  // MS4: enum_name → path
 }
 
 pub enum EnumArgs {
@@ -269,11 +313,14 @@ Semantic と CodeGen はこのテーブルを参照するだけで、スコー�
 
 ### 責務
 
-1. **型推論**: 式の型を推論し、`HirExpr.ty` に格納する
-2. **名前解決**: 変数参照を `VarId` に、関数呼び出しを `FuncId` に解決する
-3. **フィールド解決**: 構造体フィールド名をインデックスに変換する
-4. **バリアント解決**: 列挙型バリアント名をインデックスに変換する
-5. **型定義の登録**: 構造体・列挙型・関数のシグネチャを TypeContext に登録する
+1. **モジュール型コンテキスト構築** (MS4): 全モジュールのトップレベルシンボルを登録し、import を解決する
+2. **修飾パス解決** (MS4): `a::b` がモジュール::アイテムか列挙型::バリアントかを判定する
+3. **可視性チェック** (MS4): import 先のアイテムが `pub` であることを検証する
+4. **型推論**: 式の型を推論し、`HirExpr.ty` に格納する
+5. **名前解決**: 変数参照を `VarId` に、関数呼び出しを `FuncId` に解決する
+6. **フィールド解決**: 構造体フィールド名をインデックスに変換する
+7. **バリアント解決**: 列挙型バリアント名をインデックスに変換する
+8. **型定義の登録**: 構造体・列挙型・関数のシグネチャを TypeContext に登録する
 
 ### ScopeStack
 
@@ -382,7 +429,8 @@ impl Diagnostics {
 src/
 ├── main.rs                # CLI エントリポイント、パイプライン統括
 ├── arena.rs               # Arena<T>, Id<T>
-├── diagnostics.rs         # Span, Diagnostic, Diagnostics
+├── diagnostics.rs         # Span, Diagnostic, Diagnostics, FileTable (MS4)
+├── module_loader.rs       # ModuleLoader: import 解析、依存モジュール発見 (MS4)
 ├── scope.rs               # ScopeStack<V>
 ├── syntax/
 │   ├── mod.rs             # pub use

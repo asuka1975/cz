@@ -1,0 +1,12 @@
+// TEST: import as 別名
+// EXPECT: success
+// DESCRIPTION: import base::io as stdio で別名を付けて使用する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 99\n
+
+import base::io as stdio;
+
+fn main() -> i32 {
+    stdio::print_i32(99);
+    0
+}

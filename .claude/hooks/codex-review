@@ -4,6 +4,6 @@ set -eux pipefail
 
 tmp_json=$(mktemp)
 
-codex exec --skip-git-repo-check=false "/codex-feedback" > "$tmp_json"
+codex exec "codex-feedbackスキルを使ってください" > "$tmp_json"
 
 cat "$tmp_json"

@@ -14,10 +14,12 @@ Cz のソースコードは UTF-8 でエンコードされたテキストファ�
 fn let mut return if else while true false
 match break continue struct enum as
 type
+import pub
 ```
 
 **MS2 で追加**: `match`, `break`, `continue`, `struct`, `enum`, `as`
 **MS3 で追加**: `type`
+**MS4 で追加**: `import`, `pub`
 
 ### 型キーワード
 
@@ -89,9 +91,11 @@ float_suffix   = "f32" | "f64"
 .             (MS2: フィールドアクセス / タプルインデックス)
 ..=           (MS2: 範囲パターン)
 =>            (MS2: match アーム)
+::            (MS4: パス区切り)
 ```
 
 **MS2 で追加**: `.`, `..=`, `=>`
+**MS4 で追加**: `::`
 
 ### コメント
 
@@ -112,13 +116,13 @@ line_comment = '//' (任意の文字)* (改行 | EOF)
 
 | トークン種別 | 例 |
 |---|---|
-| Keyword | `fn`, `let`, `mut`, `return`, `if`, `else`, `while`, `true`, `false`, `match`, `break`, `continue`, `struct`, `enum`, `as`, `type` |
+| Keyword | `fn`, `let`, `mut`, `return`, `if`, `else`, `while`, `true`, `false`, `match`, `break`, `continue`, `struct`, `enum`, `as`, `type`, `import`, `pub` |
 | TypeKeyword | `i8`, `i16`, `i32`, `i64`, `f32`, `f64`, `bool` |
 | Identifier | `foo`, `bar_baz`, `_x`, `main` |
 | Label | `'outer`, `'loop1` |
 | IntegerLiteral | `0`, `42`, `100i64` |
 | FloatLiteral | `3.14`, `1.0f32` |
-| Operator / Punctuation | `+`, `->`, `==`, `{`, `;`, `.`, `..=`, `=>` 等 |
+| Operator / Punctuation | `+`, `->`, `==`, `{`, `;`, `.`, `..=`, `=>`, `::` 等 |
 | EOF | ファイル終端 |
 
 ## 例

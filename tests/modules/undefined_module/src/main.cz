@@ -1,0 +1,9 @@
+// TEST: 存在しないモジュールの import
+// EXPECT: compile-error
+// DESCRIPTION: 存在しないモジュールを import するとコンパイルエラーになる
+
+import app::nonexistent;
+
+fn main() -> i32 {
+    0
+}

@@ -31,9 +31,10 @@ primary          = integer_literal
                  | match_expression
                  | while_expression
                  | block_expression
-function_call    = identifier ["<" type ("," type)* ">"] "(" [expression ("," expression)*] ")"
+qualified_path   = identifier ("::" identifier)*
+function_call    = qualified_path ["<" type ("," type)* ">"] "(" [expression ("," expression)*] ")"
 tuple_expression = "(" expression "," expression ("," expression)* ")"
-struct_expression = identifier ["<" type ("," type)* ">"] "{" [field_init ("," field_init)* [","]] "}"
+struct_expression = qualified_path ["<" type ("," type)* ">"] "{" [field_init ("," field_init)* [","]] "}"
 field_init       = identifier ":" expression
 block_expression = "{" statement* [expression] "}"
 if_expression    = "if" expression block_expression ["else" (block_expression | if_expression)]
@@ -189,6 +190,22 @@ let g = {
     tmp * 2
 };
 ```
+
+### 修飾パスによる呼び出し (MS4)
+
+モジュール import 後、修飾パスで関数や型にアクセスできる。詳細は [12-modules.md](./12-modules.md) を参照。
+
+```cz
+import base::io;
+import app::math;
+
+fn main() -> i32 {
+    io::print_i32(math::add(1, 2));
+    0
+}
+```
+
+修飾パス `a::b` は Lowering 時に「モジュール名::アイテム名」か「列挙型名::バリアント名」かが解決される。
 
 ## 制約・制限
 

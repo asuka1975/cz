@@ -1,0 +1,18 @@
+// TEST: モジュール修飾での列挙型バリアントアクセス
+// EXPECT: success
+// DESCRIPTION: モジュール import 後、module::Enum::Variant の 3 セグメントパスでバリアントを構築する
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 1\n
+
+import app::shapes;
+import base::io::print_i32;
+
+fn main() -> i32 {
+    let c = shapes::Color::Green;
+    match c {
+        shapes::Color::Red => print_i32(0),
+        shapes::Color::Green => print_i32(1),
+        shapes::Color::Blue => print_i32(2),
+    }
+    0
+}

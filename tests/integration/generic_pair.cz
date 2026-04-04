@@ -4,6 +4,9 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 1\ntrue\n20\n10\n
 
+import base::io::print_i32;
+import base::io::print_bool;
+
 struct Pair<A, B> {
     first: A,
     second: B,

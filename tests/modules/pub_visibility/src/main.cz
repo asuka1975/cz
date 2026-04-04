@@ -1,0 +1,9 @@
+// TEST: pub なし関数のアクセス制限
+// EXPECT: compile-error
+// DESCRIPTION: pub なしの関数を他モジュールから import しようとするとコンパイルエラーになる
+
+import app::helper::secret;
+
+fn main() -> i32 {
+    secret(42)
+}

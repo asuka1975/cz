@@ -4,6 +4,8 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 5\n1\n6\n1\n
 
+import base::io::print_i32;
+
 fn main() -> i32 {
     let a = 3.0;
     let b = 2.0;

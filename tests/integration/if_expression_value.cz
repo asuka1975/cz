@@ -4,6 +4,8 @@
 // EXPECTED_EXIT_CODE: 0
 // EXPECTED_STDOUT: 20\n-1\n0\n1\n
 
+import base::io::print_i32;
+
 fn max(a: i32, b: i32) -> i32 {
     if a > b { a } else { b }
 }

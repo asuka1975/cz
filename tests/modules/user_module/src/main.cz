@@ -1,0 +1,13 @@
+// TEST: ユーザーモジュール間参照
+// EXPECT: success
+// DESCRIPTION: import app::math でユーザー定義モジュールを import し、修飾パスで関数を呼ぶ
+// EXPECTED_EXIT_CODE: 0
+// EXPECTED_STDOUT: 30\n
+
+import app::math;
+import base::io;
+
+fn main() -> i32 {
+    io::print_i32(math::add(10, 20));
+    0
+}
